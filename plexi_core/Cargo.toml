@@ -1,0 +1,21 @@
+[package]
+name = "plexi_core"
+description = "A flexible auditor companion client"
+version = "0.0.1"
+authors = ["Thibault Meunier <thibault@cloudflare.com>"]
+edition = "2021"
+readme = "../README.md"
+homepage = "https://github.com/cloudflare/plexi"
+repository = "https://github.com/thibmeu/plexi"
+keywords = ["transparency", "e2ee", "auditor", "cryptography"]
+categories = ["cryptography"]
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1.0.81"
+bincode = { workspace = true }
+ed25519-dalek = { workspace = true }
+hex = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
