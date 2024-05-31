@@ -16,7 +16,7 @@ name = "plexi"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.81"
+anyhow = "1.0.86"
 clap = { version = "4.5.4", features = ["derive"] }
 clap-verbosity-flag = "2.2.0"
 ed25519-dalek = { workspace = true }

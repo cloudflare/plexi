@@ -1,53 +1,164 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{self, Display},
+    ops::{Add, Sub},
+    str::FromStr,
+};
 
-use anyhow::{anyhow, Result};
 use bincode::{Decode, Encode};
 use ed25519_dalek::SIGNATURE_LENGTH;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
+
+#[derive(Error, Debug)]
+pub enum PlexiError {
+    #[error("invalid parameter `{0}`")]
+    BadParameter(String),
+    #[error("missing parameter `{0}`")]
+    MissingParameter(String),
+    #[error("cannot serialize message")]
+    Serialization,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+pub struct Epoch(u64);
+
+pub const FIRST_EPOCH: Epoch = Epoch(1);
+
+impl Epoch {
+    pub fn is_first(&self) -> bool {
+        self.0 == FIRST_EPOCH.0
+    }
+}
+
+impl From<Epoch> for u64 {
+    fn from(val: Epoch) -> Self {
+        val.0
+    }
+}
+
+impl fmt::Display for Epoch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for Epoch {
+    type Err = PlexiError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        s.parse::<u64>()
+            .map(Epoch)
+            .map_err(|_| PlexiError::BadParameter("epoch".to_string()))
+    }
+}
+
+impl PartialEq<u64> for Epoch {
+    fn eq(&self, other: &u64) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<Epoch> for u64 {
+    fn eq(&self, other: &Epoch) -> bool {
+        *self == other.0
+    }
+}
+
+impl Add<u64> for Epoch {
+    type Output = Epoch;
+
+    fn add(self, rhs: u64) -> Epoch {
+        Epoch(self.0 + rhs)
+    }
+}
+
+impl Sub<u64> for Epoch {
+    type Output = Epoch;
+
+    fn sub(self, rhs: u64) -> Epoch {
+        Epoch(self.0 - rhs)
+    }
+}
+
+impl Add<Epoch> for Epoch {
+    type Output = Epoch;
+
+    fn add(self, rhs: Epoch) -> Epoch {
+        Epoch(self.0 + rhs.0)
+    }
+}
+
+impl Sub<Epoch> for Epoch {
+    type Output = Epoch;
+
+    fn sub(self, rhs: Epoch) -> Epoch {
+        Epoch(self.0 - rhs.0)
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
 pub struct SignatureMessage {
+    namespace: String,
     timestamp: u64,
-    epoch: u64,
+    epoch: Epoch,
     #[serde(with = "hex::serde")]
     digest: Vec<u8>,
+    // TODO: consider adding a version
 }
 
 impl SignatureMessage {
-    pub fn new(timestamp: u64, epoch: u64, digest: Vec<u8>) -> Self {
+    pub fn new(namespace: String, timestamp: u64, epoch: &Epoch, digest: Vec<u8>) -> Self {
         Self {
+            namespace,
             timestamp,
-            epoch,
+            epoch: epoch.clone(),
             digest,
         }
+    }
+
+    pub fn namespace(&self) -> String {
+        self.namespace.clone()
     }
 
     pub fn timestamp(&self) -> u64 {
         self.timestamp
     }
 
-    pub fn epoch(&self) -> u64 {
-        self.epoch
+    pub fn epoch(&self) -> Epoch {
+        self.epoch.clone()
     }
 
     pub fn digest(&self) -> Vec<u8> {
         self.digest.clone()
     }
 
-    pub fn to_vec(&self) -> Result<Vec<u8>> {
+    pub fn to_vec(&self) -> Result<Vec<u8>, PlexiError> {
         bincode::encode_to_vec(self, bincode::config::legacy())
-            .map_err(|_e| anyhow!("cannot serialize message"))
+            .map_err(|_e| PlexiError::Serialization)
     }
 }
 
 impl From<SignatureResponse> for SignatureMessage {
     fn from(val: SignatureResponse) -> Self {
         Self {
+            namespace: val.namespace,
             timestamp: val.timestamp,
             epoch: val.epoch,
             digest: val.digest,
         }
+    }
+}
+
+impl Display for SignatureMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}/{}",
+            self.epoch,
+            hex::encode(self.digest.clone())
+        )
     }
 }
 
@@ -59,7 +170,6 @@ pub struct SignatureMetadata {
 impl From<SignatureMetadata> for HashMap<String, String> {
     fn from(val: SignatureMetadata) -> Self {
         let mut map = HashMap::new();
-        // Convert u64 to String for key 'a'
         map.insert("digest".to_string(), val.digest.clone());
         map
     }
@@ -67,19 +177,19 @@ impl From<SignatureMetadata> for HashMap<String, String> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SignatureRequest {
-    epoch: u64,
+    epoch: Epoch,
     #[serde(with = "hex::serde")]
     digest: Vec<u8>,
     // TODO: previous digest?
 }
 
 impl SignatureRequest {
-    pub fn new(epoch: u64, digest: Vec<u8>) -> Self {
+    pub fn new(epoch: Epoch, digest: Vec<u8>) -> Self {
         Self { epoch, digest }
     }
 
-    pub fn epoch(&self) -> u64 {
-        self.epoch
+    pub fn epoch(&self) -> Epoch {
+        self.epoch.clone()
     }
 
     pub fn digest(&self) -> Vec<u8> {
@@ -89,8 +199,9 @@ impl SignatureRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SignatureResponse {
+    namespace: String,
     timestamp: u64,
-    epoch: u64,
+    epoch: Epoch,
     #[serde(with = "hex::serde")]
     digest: Vec<u8>,
     #[serde(with = "hex::serde")]
@@ -98,21 +209,26 @@ pub struct SignatureResponse {
 }
 
 impl SignatureResponse {
-    pub fn new(timestamp: u64, epoch: u64, digest: Vec<u8>, signature: Vec<u8>) -> Self {
+    pub fn new(namespace: String, timestamp: u64, epoch: &Epoch, digest: Vec<u8>, signature: Vec<u8>) -> Self {
         Self {
+            namespace,
             timestamp,
-            epoch,
+            epoch: epoch.clone(),
             digest,
             signature,
         }
+    }
+
+    pub fn namespace(&self) -> String {
+        self.namespace.clone()
     }
 
     pub fn timestamp(&self) -> u64 {
         self.timestamp
     }
 
-    pub fn epoch(&self) -> u64 {
-        self.epoch
+    pub fn epoch(&self) -> Epoch {
+        self.epoch.clone()
     }
 
     pub fn digest(&self) -> Vec<u8> {
@@ -130,6 +246,7 @@ pub type Report = SignatureResponse;
 impl From<Report> for HashMap<String, String> {
     fn from(val: Report) -> Self {
         let mut map = HashMap::new();
+        map.insert("namespace".to_string(), val.namespace());
         map.insert("timestamp".to_string(), val.timestamp.to_string());
         map.insert("epoch".to_string(), val.epoch.to_string());
         map.insert("digest".to_string(), hex::encode(val.digest));
@@ -139,28 +256,35 @@ impl From<Report> for HashMap<String, String> {
 }
 
 impl TryFrom<HashMap<String, String>> for Report {
-    type Error = anyhow::Error;
+    type Error = PlexiError;
 
     fn try_from(value: HashMap<String, String>) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
+            namespace: value
+                .get("namespace")
+                .ok_or_else(|| PlexiError::MissingParameter("namespace".to_string()))?
+                .clone(),
             timestamp: value
                 .get("timestamp")
-                .ok_or_else(|| anyhow::anyhow!("Missing timestamp"))?
-                .parse()?,
+                .ok_or_else(|| PlexiError::MissingParameter("timestamp".to_string()))?
+                .parse()
+                .map_err(|_| PlexiError::BadParameter("timestamp".to_string()))?,
             epoch: value
                 .get("epoch")
-                .ok_or_else(|| anyhow::anyhow!("Missing epoch"))?
+                .ok_or_else(|| PlexiError::MissingParameter("epoch".to_string()))?
                 .parse()?,
             digest: hex::decode(
                 value
                     .get("digest")
-                    .ok_or_else(|| anyhow::anyhow!("Missing digest"))?,
-            )?,
+                    .ok_or_else(|| PlexiError::MissingParameter("digest".to_string()))?,
+            )
+            .map_err(|_| PlexiError::BadParameter("digest".to_string()))?,
             signature: hex::decode(
                 value
                     .get("signature")
-                    .ok_or_else(|| anyhow::anyhow!("Missing signature"))?,
-            )?,
+                    .ok_or_else(|| PlexiError::MissingParameter("signature".to_string()))?,
+            )
+            .map_err(|_| PlexiError::BadParameter("signature".to_string()))?,
         })
     }
 }

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 /// 1. First interaction
@@ -20,22 +22,28 @@ pub struct Cli {
 pub enum Commands {
     #[command(verbatim_doc_comment)]
     Verify {
+        /// Namespace ID
+        # [arg(short, long)]
+        namespace: String,
         /// Ed25519 public key in hex format.
         #[arg(long)]
         publickey: String,
         /// Path to a file to read from.
-        input: Option<String>,
+        input: Option<PathBuf>,
     },
     #[command(verbatim_doc_comment)]
     Sign {
+        /// Namespace ID
+        # [arg(short, long)]
+        namespace: String,
         /// Ed25519 signing key in hex format.
         #[arg(long)]
         signingkey: String,
         /// Write the result to the file at path OUTPUT.
         #[arg(short, long)]
-        output: Option<String>,
+        output: Option<PathBuf>,
         /// Path to a file to read from.
-        input: Option<String>,
+        input: Option<PathBuf>,
     },
 }
 

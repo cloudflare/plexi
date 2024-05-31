@@ -11,12 +11,17 @@ fn main() {
         .init();
 
     let output = match cli.command {
-        cli::Commands::Verify { publickey, input } => cmd::verify(&publickey, input),
+        cli::Commands::Verify {
+            namespace,
+            publickey: public_key,
+            input,
+        } => cmd::verify(&namespace, &public_key, input),
         cli::Commands::Sign {
+            namespace,
             signingkey,
             output,
             input,
-        } => cmd::sign(&signingkey, output, input),
+        } => cmd::sign(&namespace, &signingkey, output, input),
     };
 
     match output {
