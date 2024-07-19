@@ -10,12 +10,16 @@ repository = "https://github.com/thibmeu/plexi"
 keywords = ["transparency", "e2ee", "auditor", "cryptography"]
 categories = ["cryptography"]
 license = "Apache-2.0"
+build = "src/build.rs"
 
 [dependencies]
 bincode = { workspace = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true, features = ["serde"] }
+prost = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-thiserror = "1.0.61"
+thiserror = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
+
+[build-dependencies]
+prost-build = { version = "0.13" }

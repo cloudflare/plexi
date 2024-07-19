@@ -1,0 +1,19 @@
+syntax = "proto2";
+package plexi_core.types;
+
+message Epoch {
+    optional uint64 inner = 1;
+}
+
+message SignatureMessage {
+    required uint32 version = 1;
+    required string namespace = 2;
+    required uint64 timestamp = 3;
+    required Epoch epoch = 4;
+    required bytes digest = 5;
+}
+
+message SignatureResponse {
+    required SignatureMessage message = 1;
+    required bytes signature = 2;
+}
