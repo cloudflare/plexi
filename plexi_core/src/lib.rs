@@ -1,15 +1,24 @@
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    num::ParseIntError,
     ops::{Add, Sub},
     str::FromStr,
 };
 
-use bincode::{Decode, Encode};
+use bincode::{BorrowDecode, Decode, Encode};
 use ed25519_dalek::SIGNATURE_LENGTH;
+use prost::Message;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
+
+pub mod proto;
+
+const SIGNATURE_VERSIONS: [SignatureVersion; 2] = [
+    SignatureVersion::ProtobufEd25519,
+    SignatureVersion::BincodeEd25519,
+];
 
 #[derive(Error, Debug)]
 pub enum PlexiError {
@@ -19,6 +28,84 @@ pub enum PlexiError {
     MissingParameter(String),
     #[error("cannot serialize message")]
     Serialization,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(into = "u32")]
+#[serde(from = "u32")]
+#[repr(u32)]
+pub enum SignatureVersion {
+    ProtobufEd25519 = 0x0001,
+    BincodeEd25519 = 0x0002,
+    Unknown(u32),
+}
+
+impl From<SignatureVersion> for u32 {
+    fn from(val: SignatureVersion) -> Self {
+        match val {
+            SignatureVersion::ProtobufEd25519 => 0x0001,
+            SignatureVersion::BincodeEd25519 => 0x0002,
+            SignatureVersion::Unknown(u) => u,
+        }
+    }
+}
+
+impl From<u32> for SignatureVersion {
+    fn from(u: u32) -> Self {
+        match u {
+            0x0001 => Self::ProtobufEd25519,
+            0x0002 => Self::BincodeEd25519,
+            _ => Self::Unknown(u),
+        }
+    }
+}
+
+impl FromStr for SignatureVersion {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let u: u32 = s.parse()?;
+        Ok(u.into())
+    }
+}
+
+impl fmt::Display for SignatureVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::ProtobufEd25519 => "0x0001",
+            Self::BincodeEd25519 => "0x0002",
+            Self::Unknown(_u) => "unknown",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl Encode for SignatureVersion {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        let value: u32 = self.clone().into();
+        bincode::Encode::encode(&value, encoder)
+    }
+}
+
+impl Decode for SignatureVersion {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let value: u32 = bincode::Decode::decode(decoder)?;
+        Ok(value.into())
+    }
+}
+
+impl<'de> BorrowDecode<'de> for SignatureVersion {
+    fn borrow_decode<B: bincode::de::BorrowDecoder<'de>>(
+        buffer: &mut B,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let value = u32::borrow_decode(buffer)?;
+        Ok(value.into())
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
@@ -32,8 +119,8 @@ impl Epoch {
     }
 }
 
-impl From<Epoch> for u64 {
-    fn from(val: Epoch) -> Self {
+impl From<&Epoch> for u64 {
+    fn from(val: &Epoch) -> Self {
         val.0
     }
 }
@@ -100,6 +187,7 @@ impl Sub<Epoch> for Epoch {
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
 pub struct SignatureMessage {
+    version: SignatureVersion,
     namespace: String,
     timestamp: u64,
     epoch: Epoch,
@@ -109,40 +197,77 @@ pub struct SignatureMessage {
 }
 
 impl SignatureMessage {
-    pub fn new(namespace: String, timestamp: u64, epoch: &Epoch, digest: Vec<u8>) -> Self {
-        Self {
+    pub fn new(
+        version: &SignatureVersion,
+        namespace: String,
+        timestamp: u64,
+        epoch: &Epoch,
+        digest: Vec<u8>,
+    ) -> Result<Self, PlexiError> {
+        if !SIGNATURE_VERSIONS.contains(version) {
+            return Err(PlexiError::BadParameter("version".to_string()));
+        }
+        Ok(Self {
+            version: version.clone(),
             namespace,
             timestamp,
             epoch: epoch.clone(),
             digest,
-        }
+        })
     }
 
-    pub fn namespace(&self) -> String {
-        self.namespace.clone()
+    pub fn version(&self) -> &SignatureVersion {
+        &self.version
+    }
+
+    pub fn namespace(&self) -> &str {
+        &self.namespace
     }
 
     pub fn timestamp(&self) -> u64 {
         self.timestamp
     }
 
-    pub fn epoch(&self) -> Epoch {
-        self.epoch.clone()
+    pub fn epoch(&self) -> &Epoch {
+        &self.epoch
     }
 
     pub fn digest(&self) -> Vec<u8> {
         self.digest.clone()
     }
 
-    pub fn to_vec(&self) -> Result<Vec<u8>, PlexiError> {
+    fn to_vec_bincode(&self) -> Result<Vec<u8>, PlexiError> {
         bincode::encode_to_vec(self, bincode::config::legacy())
             .map_err(|_e| PlexiError::Serialization)
+    }
+
+    fn to_vec_proto(&self) -> Result<Vec<u8>, PlexiError> {
+        let message = proto::types::SignatureMessage {
+            version: self.version().clone().into(),
+            namespace: self.namespace().to_string(),
+            timestamp: self.timestamp(),
+            epoch: proto::types::Epoch {
+                inner: Some(self.epoch().into()),
+            },
+            digest: self.digest().clone(),
+        };
+
+        Ok(message.encode_to_vec())
+    }
+
+    pub fn to_vec(&self) -> Result<Vec<u8>, PlexiError> {
+        match self.version {
+            SignatureVersion::ProtobufEd25519 => self.to_vec_proto(),
+            SignatureVersion::BincodeEd25519 => self.to_vec_bincode(),
+            _ => Err(PlexiError::Serialization),
+        }
     }
 }
 
 impl From<SignatureResponse> for SignatureMessage {
     fn from(val: SignatureResponse) -> Self {
         Self {
+            version: val.version,
             namespace: val.namespace,
             timestamp: val.timestamp,
             epoch: val.epoch,
@@ -153,12 +278,7 @@ impl From<SignatureResponse> for SignatureMessage {
 
 impl Display for SignatureMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}/{}",
-            self.epoch,
-            hex::encode(self.digest.clone())
-        )
+        write!(f, "{}/{}", self.epoch, hex::encode(self.digest.clone()))
     }
 }
 
@@ -199,6 +319,7 @@ impl SignatureRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SignatureResponse {
+    version: SignatureVersion,
     namespace: String,
     timestamp: u64,
     epoch: Epoch,
@@ -209,8 +330,16 @@ pub struct SignatureResponse {
 }
 
 impl SignatureResponse {
-    pub fn new(namespace: String, timestamp: u64, epoch: &Epoch, digest: Vec<u8>, signature: Vec<u8>) -> Self {
+    pub fn new(
+        version: &SignatureVersion,
+        namespace: String,
+        timestamp: u64,
+        epoch: &Epoch,
+        digest: Vec<u8>,
+        signature: Vec<u8>,
+    ) -> Self {
         Self {
+            version: version.clone(),
             namespace,
             timestamp,
             epoch: epoch.clone(),
@@ -219,16 +348,20 @@ impl SignatureResponse {
         }
     }
 
-    pub fn namespace(&self) -> String {
-        self.namespace.clone()
+    pub fn version(&self) -> &SignatureVersion {
+        &self.version
+    }
+
+    pub fn namespace(&self) -> &str {
+        &self.namespace
     }
 
     pub fn timestamp(&self) -> u64 {
         self.timestamp
     }
 
-    pub fn epoch(&self) -> Epoch {
-        self.epoch.clone()
+    pub fn epoch(&self) -> &Epoch {
+        &self.epoch
     }
 
     pub fn digest(&self) -> Vec<u8> {
@@ -246,7 +379,9 @@ pub type Report = SignatureResponse;
 impl From<Report> for HashMap<String, String> {
     fn from(val: Report) -> Self {
         let mut map = HashMap::new();
-        map.insert("namespace".to_string(), val.namespace());
+        let version: u32 = val.version().clone().into();
+        map.insert("version".to_string(), version.to_string());
+        map.insert("namespace".to_string(), val.namespace().to_string());
         map.insert("timestamp".to_string(), val.timestamp.to_string());
         map.insert("epoch".to_string(), val.epoch.to_string());
         map.insert("digest".to_string(), hex::encode(val.digest));
@@ -260,6 +395,11 @@ impl TryFrom<HashMap<String, String>> for Report {
 
     fn try_from(value: HashMap<String, String>) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
+            version: value
+                .get("version")
+                .ok_or_else(|| PlexiError::MissingParameter("version".to_string()))?
+                .parse()
+                .map_err(|_| PlexiError::BadParameter("version".to_string()))?,
             namespace: value
                 .get("namespace")
                 .ok_or_else(|| PlexiError::MissingParameter("namespace".to_string()))?

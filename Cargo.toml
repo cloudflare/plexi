@@ -1,20 +1,35 @@
 [workspace]
-
 members = [
     "plexi_cli",
     "plexi_core"
 ]
-
 resolver = "2"
 
 [workspace.dependencies]
+anyhow = "1.0"
 bincode = "2.0.0-rc.3"
+bytes = "1.6"
+cfg-if = "1.0"
+console_error_panic_hook = { version = "0.1" }
+clap = { version = "4.5", features = ["derive"] }
+clap-verbosity-flag = "2.2.0"
+env_logger = { version = "0.11" }
 ed25519-dalek = { version = "2" }
-hex = { version = "0.4.3", features = ["serde"] }
-serde = "1.0.203"
-serde_json = "1.0.117"
-uuid = { version = "1.8.0", features = ["v4", "serde"] }
+futures-util = "0.3"
+getrandom = "0.2"
+hex = { version = "0.4" }
+matchit = "0.8"
+prost = "0.13"
+prometheus = "0.13"
+rand = { version = "0.8", default-features = false, features = ["getrandom"] }
+serde = "1.0"
+serde_json = "1.0"
+thiserror = { version = "1.0" }
+uuid = { version = "1.9", features = ["v4", "serde"] }
+worker = { version = "0.3.0", features = ["d1"] }
 
+# workspace dependencies
+plexi_core = { path = "./plexi_core" }
 
 [profile.release]
 lto = true

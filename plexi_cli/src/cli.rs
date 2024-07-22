@@ -23,7 +23,7 @@ pub enum Commands {
     #[command(verbatim_doc_comment)]
     Verify {
         /// Namespace ID
-        # [arg(short, long)]
+        #[arg(short, long)]
         namespace: String,
         /// Ed25519 public key in hex format.
         #[arg(long)]
@@ -34,7 +34,7 @@ pub enum Commands {
     #[command(verbatim_doc_comment)]
     Sign {
         /// Namespace ID
-        # [arg(short, long)]
+        #[arg(short, long)]
         namespace: String,
         /// Ed25519 signing key in hex format.
         #[arg(long)]

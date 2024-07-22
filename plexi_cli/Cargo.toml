@@ -16,11 +16,13 @@ name = "plexi"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.86"
-clap = { version = "4.5.4", features = ["derive"] }
-clap-verbosity-flag = "2.2.0"
+anyhow = { workspace = true }
+clap = { workspace = true }
+clap-verbosity-flag = { workspace = true }
 ed25519-dalek = { workspace = true }
-env_logger = "0.11.3"
+env_logger = { workspace = true }
 hex = { workspace = true, features = ["serde"] }
-plexi_core = { path = "../plexi_core" }
 serde_json = { workspace = true }
+
+# workspace dependencies
+plexi_core = { workspace = true }
