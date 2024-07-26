@@ -1,0 +1,24 @@
+[
+    {
+        "signing_key": "d6af1bca3db4fc2766b0c483706c20bf4837a46d54c1d39c2a34a9088572d712",
+        "verifying_key": "606a878700158d92b3a14a0fd37ec82e0f05f92fcf23146abfda2e3a2f10a9bc",
+        "key_id": 188,
+        "namespace": "log1.example.test",
+        "timestamp": 1717084639921,
+        "epoch": 1,
+        "digest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "signature": "31fbef3ed02ea0c8570e3740857d343857118102698a0822ee070a03d7a20637d6507fc855669ac30b959d6a0d35cba455a39e287ce2a101dbc16236027a400c",
+        "signature_version": 1
+    },
+    {
+        "signing_key": "d6af1bca3db4fc2766b0c483706c20bf4837a46d54c1d39c2a34a9088572d712",
+        "verifying_key": "606a878700158d92b3a14a0fd37ec82e0f05f92fcf23146abfda2e3a2f10a9bc",
+        "key_id": 188,
+        "namespace": "log2.example.test",
+        "timestamp": 1717084639921,
+        "epoch": 1,
+        "digest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "signature": "9e666ec61efb48e7d0a4c63f9eb50ab3d1674ac7841d97e1a2d85946a7da00bde6ce2dff0d56bcf40d61f4cfcac290001cf20b662c5e223f5e8ce192bb0f7101",
+        "signature_version": 2
+    }
+]

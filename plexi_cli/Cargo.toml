@@ -1,15 +1,15 @@
 [package]
 name = "plexi_cli"
 description = "A flexible auditor companion client"
-version = "0.0.1"
-authors = ["Thibault Meunier <thibault@cloudflare.com>"]
-edition = "2021"
-readme = "README.md"
-homepage = "https://github.com/cloudflare/plexi"
-repository = "https://github.com/thibmeu/plexi"
-keywords = ["transparency", "e2ee", "auditor", "cryptography", "cli"]
-categories = ["cryptography"]
-license = "Apache-2.0"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+readme.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [[bin]]
 name = "plexi"
