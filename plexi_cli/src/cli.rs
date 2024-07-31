@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 /// 1. First interaction
-/// plexi verify --publickey <publickey> --signature <signature> --message <message>
+///    plexi verify --publickey <publickey> --signature <signature> --message <message>
 /// 2. TODOs
 /// - plexi report
 /// - plexi sign
