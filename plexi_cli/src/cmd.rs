@@ -3,7 +3,7 @@ use std::{fs, io, path::PathBuf};
 // TODO: consider color_eyre, and chaining with [.context](https://docs.rs/anyhow/latest/anyhow/trait.Context.html#tymethod.context)
 use anyhow::{anyhow, Context, Result};
 use ed25519_dalek::{ed25519::signature::SignerMut, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH};
-use plexi_core::{SignatureMessage, SignatureResponse};
+use plexi_core::{crypto::ed25519_public_key_to_key_id, SignatureMessage, SignatureResponse};
 
 pub fn file_or_stdin(input: Option<PathBuf>) -> Result<Box<dyn io::Read>> {
     let reader: Box<dyn io::Read> = match input {
@@ -52,6 +52,7 @@ pub fn sign(
         message.epoch(),
         message.digest(),
         signature.to_vec(),
+        Some(ed25519_public_key_to_key_id(&secret_key.verifying_key().to_bytes())),
     );
 
     serde_json::to_writer(dst, &signature_response)?;
@@ -73,6 +74,13 @@ pub fn verify(namespace: &str, public_key: &str, input: Option<PathBuf>) -> Resu
         .as_slice()
         .try_into()
         .context("cannot convert public key")?;
+
+    if let Some(key_id) = signature_response.key_id() {
+        if key_id !=  ed25519_public_key_to_key_id(&public_key) {
+            return Err(anyhow!("public key id does not match the provided public key"))
+        }
+    }
+
     let public_key =
         ed25519_dalek::VerifyingKey::from_bytes(&public_key).context("cannot create public key")?;
 

@@ -11,8 +11,11 @@ use ed25519_dalek::SIGNATURE_LENGTH;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+#[cfg(feature = "openapi")]
+use utoipa::ToSchema;
 use uuid::Uuid;
 
+pub mod crypto;
 pub mod proto;
 
 const SIGNATURE_VERSIONS: [SignatureVersion; 2] = [
@@ -21,6 +24,7 @@ const SIGNATURE_VERSIONS: [SignatureVersion; 2] = [
 ];
 
 #[derive(Error, Debug)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub enum PlexiError {
     #[error("invalid parameter `{0}`")]
     BadParameter(String),
@@ -31,6 +35,7 @@ pub enum PlexiError {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(into = "u32")]
 #[serde(from = "u32")]
 #[repr(u32)]
@@ -109,6 +114,7 @@ impl<'de> BorrowDecode<'de> for SignatureVersion {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Epoch(u64);
 
 pub const FIRST_EPOCH: Epoch = Epoch(1);
@@ -186,6 +192,7 @@ impl Sub<Epoch> for Epoch {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureMessage {
     version: SignatureVersion,
     namespace: String,
@@ -283,6 +290,7 @@ impl Display for SignatureMessage {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureMetadata {
     digest: String,
 }
@@ -296,6 +304,7 @@ impl From<SignatureMetadata> for HashMap<String, String> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureRequest {
     epoch: Epoch,
     #[serde(with = "hex::serde")]
@@ -318,6 +327,7 @@ impl SignatureRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureResponse {
     version: SignatureVersion,
     namespace: String,
@@ -327,6 +337,8 @@ pub struct SignatureResponse {
     digest: Vec<u8>,
     #[serde(with = "hex::serde")]
     signature: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key_id: Option<u8>,
 }
 
 impl SignatureResponse {
@@ -337,6 +349,7 @@ impl SignatureResponse {
         epoch: &Epoch,
         digest: Vec<u8>,
         signature: Vec<u8>,
+        key_id: Option<u8>,
     ) -> Self {
         Self {
             version: version.clone(),
@@ -345,6 +358,7 @@ impl SignatureResponse {
             epoch: epoch.clone(),
             digest,
             signature,
+            key_id,
         }
     }
 
@@ -371,6 +385,10 @@ impl SignatureResponse {
     pub fn signature(&self) -> [u8; SIGNATURE_LENGTH] {
         self.signature.as_slice().try_into().unwrap()
     }
+
+    pub fn key_id(&self) -> Option<u8> {
+        self.key_id
+    }
 }
 
 // A report request is a signature reponse, except the signature does not come from the auditor (thought to be offline) but from the log provider
@@ -386,6 +404,9 @@ impl From<Report> for HashMap<String, String> {
         map.insert("epoch".to_string(), val.epoch.to_string());
         map.insert("digest".to_string(), hex::encode(val.digest));
         map.insert("signature".to_string(), hex::encode(val.signature));
+        if let Some(key_id) = val.key_id {
+            map.insert("key_id".to_string(), key_id.to_string());
+        }
         map
     }
 }
@@ -425,6 +446,7 @@ impl TryFrom<HashMap<String, String>> for Report {
                     .ok_or_else(|| PlexiError::MissingParameter("signature".to_string()))?,
             )
             .map_err(|_| PlexiError::BadParameter("signature".to_string()))?,
+            key_id: value.get("key_id").map(|id| id.parse().unwrap()),
         })
     }
 }
@@ -446,5 +468,61 @@ impl ReportResponse {
 
     pub fn report(&self) -> Report {
         self.report.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crypto::ed25519_public_key_to_key_id;
+    use ed25519_dalek::{ed25519::signature::SignerMut, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH};
+
+    use super::*;
+
+    #[test]
+    fn test_vector() {
+        const TEST_VECTORS: &str = std::include_str!("../tests/test-vectors.json");
+
+        #[derive(Deserialize, Debug, Clone)]
+        pub struct TestVector {
+            #[serde(with = "hex::serde")]
+            signing_key: [u8; SECRET_KEY_LENGTH],
+            #[serde(with = "hex::serde")]
+            verifying_key: [u8; PUBLIC_KEY_LENGTH],
+            key_id: u8,
+            namespace: String,
+            timestamp: u64,
+            epoch: Epoch,
+            #[serde(with = "hex::serde")]
+            digest: Vec<u8>,
+            #[serde(with = "hex::serde")]
+            signature: [u8; SIGNATURE_LENGTH],
+            signature_version: SignatureVersion,
+        }
+
+        let test_vectors: Vec<TestVector> = serde_json::from_str(TEST_VECTORS).unwrap();
+        for tv in test_vectors {
+            let mut signing_key = ed25519_dalek::SigningKey::from_bytes(&tv.signing_key);
+            let verifying_key = signing_key.verifying_key();
+            assert_eq!(verifying_key.to_bytes(), tv.verifying_key);
+
+            let key_id = ed25519_public_key_to_key_id(&verifying_key.to_bytes());
+            assert_eq!(key_id, tv.key_id);
+
+            let message = SignatureMessage::new(
+                &tv.signature_version,
+                tv.namespace,
+                tv.timestamp,
+                &tv.epoch,
+                tv.digest,
+            )
+            .unwrap();
+
+            let signature = signing_key.sign(&message.to_vec().unwrap());
+            assert_eq!(signature.to_bytes(), tv.signature);
+
+            assert!(verifying_key
+                .verify_strict(&message.to_vec().unwrap(), &signature)
+                .is_ok());
+        }
     }
 }

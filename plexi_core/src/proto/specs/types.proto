@@ -16,4 +16,5 @@ message SignatureMessage {
 message SignatureResponse {
     required SignatureMessage message = 1;
     required bytes signature = 2;
+    optional uint32 key_id = 3;
 }
