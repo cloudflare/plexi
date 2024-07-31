@@ -52,7 +52,9 @@ pub fn sign(
         message.epoch(),
         message.digest(),
         signature.to_vec(),
-        Some(ed25519_public_key_to_key_id(&secret_key.verifying_key().to_bytes())),
+        Some(ed25519_public_key_to_key_id(
+            &secret_key.verifying_key().to_bytes(),
+        )),
     );
 
     serde_json::to_writer(dst, &signature_response)?;
@@ -76,8 +78,10 @@ pub fn verify(namespace: &str, public_key: &str, input: Option<PathBuf>) -> Resu
         .context("cannot convert public key")?;
 
     if let Some(key_id) = signature_response.key_id() {
-        if key_id !=  ed25519_public_key_to_key_id(&public_key) {
-            return Err(anyhow!("public key id does not match the provided public key"))
+        if key_id != ed25519_public_key_to_key_id(&public_key) {
+            return Err(anyhow!(
+                "public key id does not match the provided public key"
+            ));
         }
     }
 

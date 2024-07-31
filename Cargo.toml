@@ -43,6 +43,10 @@ utoipa = "4"
 utoipa-redoc = "4"
 uuid = { version = "1.9", features = ["v4", "serde"] }
 worker = "0.3.1"
+tracing = "0.1"
+tracing-web = "0.1"
+tracing-subscriber = { version = "0.3", features=['time', 'json'] }
+time = { version = "0.3", features=['wasm-bindgen'] }
 
 # workspace dependencies
 plexi_core = { path = "./plexi_core" }
