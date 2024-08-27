@@ -2,7 +2,7 @@ syntax = "proto2";
 package plexi_core.types;
 
 message Epoch {
-    optional uint64 inner = 1;
+    required uint64 inner = 1;
 }
 
 message SignatureMessage {
