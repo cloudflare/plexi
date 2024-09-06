@@ -15,38 +15,30 @@ authors = [
 edition = "2021"
 readme = "README.md"
 homepage = "https://github.com/cloudflare/plexi"
-repository = "https://github.com/thibmeu/plexi"
+repository = "https://github.com/cloudflare/plexi"
 keywords = ["transparency", "e2ee", "auditor", "cryptography"]
 categories = ["cryptography"]
 license = "Apache-2.0"
 
 [workspace.dependencies]
+akd = { version = "0.11", default-features = false }
 anyhow = "1.0"
 bincode = "2.0.0-rc.3"
-bytes = "1.6"
-console_error_panic_hook = { version = "0.1" }
 clap = { version = "4.5", features = ["derive"] }
 clap-verbosity-flag = "2.2.0"
 env_logger = { version = "0.11" }
 ed25519-dalek = { version = "2" }
 futures-util = "0.3"
-getrandom = "0.2"
 hex = { version = "0.4" }
-matchit = "0.8"
 prost = "0.13"
-prometheus = "0.13"
-rand = { version = "0.8", default-features = false, features = ["getrandom"] }
+protobuf = "3.2"
 serde = "1.0"
 serde_json = "1.0"
+sha2 = "0.10"
 thiserror = { version = "1.0" }
+tokio = "1.0"
 utoipa = "4"
-utoipa-redoc = "4"
 uuid = { version = "1.9", features = ["v4", "serde"] }
-worker = "0.3.1"
-tracing = "0.1"
-tracing-web = "0.1"
-tracing-subscriber = { version = "0.3", features=['time', 'json'] }
-time = { version = "0.3", features=['wasm-bindgen'] }
 
 # workspace dependencies
 plexi_core = { path = "./plexi_core" }

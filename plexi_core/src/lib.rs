@@ -13,9 +13,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
-use uuid::Uuid;
+
+pub use uuid::Uuid;
 
 pub mod crypto;
+pub mod namespaces;
 pub mod proto;
 
 const SIGNATURE_VERSIONS: [SignatureVersion; 2] = [
@@ -32,9 +34,11 @@ pub enum PlexiError {
     MissingParameter(String),
     #[error("cannot serialize message")]
     Serialization,
+    #[error("Root is not valid")]
+    InvalidRoot,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(into = "u32")]
 #[serde(from = "u32")]
@@ -90,7 +94,7 @@ impl Encode for SignatureVersion {
         &self,
         encoder: &mut E,
     ) -> Result<(), bincode::error::EncodeError> {
-        let value: u32 = self.clone().into();
+        let value: u32 = (*self).into();
         bincode::Encode::encode(&value, encoder)
     }
 }
@@ -113,7 +117,7 @@ impl<'de> BorrowDecode<'de> for SignatureVersion {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Encode, Decode)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Epoch(u64);
 
@@ -128,6 +132,18 @@ impl Epoch {
 impl From<&Epoch> for u64 {
     fn from(val: &Epoch) -> Self {
         val.0
+    }
+}
+
+impl From<Epoch> for u64 {
+    fn from(val: Epoch) -> Self {
+        val.0
+    }
+}
+
+impl From<u64> for Epoch {
+    fn from(val: u64) -> Self {
+        Epoch(val)
     }
 }
 
@@ -215,10 +231,10 @@ impl SignatureMessage {
             return Err(PlexiError::BadParameter("version".to_string()));
         }
         Ok(Self {
-            version: version.clone(),
+            version: *version,
             namespace,
             timestamp,
-            epoch: epoch.clone(),
+            epoch: *epoch,
             digest,
         })
     }
@@ -250,11 +266,11 @@ impl SignatureMessage {
 
     fn to_vec_proto(&self) -> Result<Vec<u8>, PlexiError> {
         let message = proto::types::SignatureMessage {
-            version: self.version().clone().into(),
+            version: (*self.version()).into(),
             namespace: self.namespace().to_string(),
             timestamp: self.timestamp(),
             epoch: proto::types::Epoch {
-                inner: Some(self.epoch().into()),
+                inner: self.epoch().into(),
             },
             digest: self.digest().clone(),
         };
@@ -303,7 +319,7 @@ impl From<SignatureMetadata> for HashMap<String, String> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureRequest {
     epoch: Epoch,
@@ -318,7 +334,7 @@ impl SignatureRequest {
     }
 
     pub fn epoch(&self) -> Epoch {
-        self.epoch.clone()
+        self.epoch
     }
 
     pub fn digest(&self) -> Vec<u8> {
@@ -326,7 +342,16 @@ impl SignatureRequest {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+impl fmt::Debug for SignatureRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignatureRequest")
+            .field("epoch", &self.epoch)
+            .field("digest", &hex::encode(&self.digest))
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureResponse {
     version: SignatureVersion,
@@ -341,6 +366,20 @@ pub struct SignatureResponse {
     key_id: Option<u8>,
 }
 
+impl fmt::Debug for SignatureResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignatureResponse")
+            .field("version", &self.version)
+            .field("namespace", &self.namespace)
+            .field("timestamp", &self.timestamp)
+            .field("epoch", &self.epoch)
+            .field("digest", &hex::encode(&self.digest))
+            .field("signature", &hex::encode(&self.signature))
+            .field("key_id", &self.key_id)
+            .finish()
+    }
+}
+
 impl SignatureResponse {
     pub fn new(
         version: &SignatureVersion,
@@ -352,10 +391,10 @@ impl SignatureResponse {
         key_id: Option<u8>,
     ) -> Self {
         Self {
-            version: version.clone(),
+            version: *version,
             namespace,
             timestamp,
-            epoch: epoch.clone(),
+            epoch: *epoch,
             digest,
             signature,
             key_id,
@@ -383,7 +422,10 @@ impl SignatureResponse {
     }
 
     pub fn signature(&self) -> [u8; SIGNATURE_LENGTH] {
-        self.signature.as_slice().try_into().unwrap()
+        self.signature
+            .as_slice()
+            .try_into()
+            .expect("signature bytes have a known length")
     }
 
     pub fn key_id(&self) -> Option<u8> {
@@ -397,7 +439,7 @@ pub type Report = SignatureResponse;
 impl From<Report> for HashMap<String, String> {
     fn from(val: Report) -> Self {
         let mut map = HashMap::new();
-        let version: u32 = val.version().clone().into();
+        let version: u32 = (*val.version()).into();
         map.insert("version".to_string(), version.to_string());
         map.insert("namespace".to_string(), val.namespace().to_string());
         map.insert("timestamp".to_string(), val.timestamp.to_string());
@@ -446,7 +488,11 @@ impl TryFrom<HashMap<String, String>> for Report {
                     .ok_or_else(|| PlexiError::MissingParameter("signature".to_string()))?,
             )
             .map_err(|_| PlexiError::BadParameter("signature".to_string()))?,
-            key_id: value.get("key_id").map(|id| id.parse().unwrap()),
+            key_id: value
+                .get("key_id")
+                .map(|id| id.parse())
+                .transpose()
+                .map_err(|_| PlexiError::BadParameter("key_id".to_string()))?,
         })
     }
 }
@@ -468,6 +514,68 @@ impl ReportResponse {
 
     pub fn report(&self) -> Report {
         self.report.clone()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct LastVerifiedEpoch {
+    job_id: Uuid,
+    epoch: Epoch,
+    #[serde(with = "hex::serde")]
+    start_hash: Vec<u8>,
+    #[serde(with = "hex::serde")]
+    end_hash: Vec<u8>,
+    timestamp: u64,
+}
+
+impl fmt::Debug for LastVerifiedEpoch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LastVerifiedEpoch")
+            .field("job_id", &self.job_id)
+            .field("epoch", &self.epoch)
+            .field("start_hash", &hex::encode(&self.start_hash))
+            .field("end_hash", &hex::encode(&self.end_hash))
+            .field("timestamp", &self.timestamp)
+            .finish()
+    }
+}
+
+impl LastVerifiedEpoch {
+    pub fn new(
+        job_id: Uuid,
+        epoch: Epoch,
+        start_hash: Vec<u8>,
+        end_hash: Vec<u8>,
+        timestamp: u64,
+    ) -> Self {
+        Self {
+            job_id,
+            epoch,
+            start_hash,
+            end_hash,
+            timestamp,
+        }
+    }
+
+    pub fn job_id(&self) -> Uuid {
+        self.job_id
+    }
+
+    pub fn epoch(&self) -> Epoch {
+        self.epoch
+    }
+
+    pub fn start_hash(&self) -> &[u8] {
+        &self.start_hash
+    }
+
+    pub fn end_hash(&self) -> &[u8] {
+        &self.end_hash
+    }
+
+    pub fn timestamp(&self) -> u64 {
+        self.timestamp
     }
 }
 
