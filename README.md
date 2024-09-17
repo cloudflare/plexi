@@ -1,4 +1,6 @@
-# plexi
+# Plexi
+
+![plexi banner image](./docs/assets/plexi_banner.png)
 
 Plexi is a flexible auditor for [Transparency systems](https://blog.cloudflare.com/key-transparency).
 
