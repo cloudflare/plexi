@@ -16,13 +16,20 @@ name = "plexi"
 path = "src/main.rs"
 
 [dependencies]
+akd = { workspace = true }
 anyhow = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features = ["env"]}
 clap-verbosity-flag = { workspace = true }
+colored = { workspace = true }
 ed25519-dalek = { workspace = true }
 env_logger = { workspace = true }
 hex = { workspace = true, features = ["serde"] }
+log = { workspace = true }
+protobuf = { workspace = true }
+reqwest = { workspace = true }
 serde_json = { workspace = true }
+time = { workspace = true, features = ["formatting"] }
+tokio = { workspace = true, features = ["full"] }
 
 # workspace dependencies
-plexi_core = { workspace = true }
+plexi_core = { workspace = true, features = ["client"] }

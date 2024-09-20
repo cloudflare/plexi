@@ -3,7 +3,8 @@ use std::process;
 mod cli;
 mod cmd;
 
-fn main() {
+#[tokio::main]
+pub async fn main() -> anyhow::Result<()> {
     let cli = cli::build();
 
     env_logger::Builder::new()
@@ -11,17 +12,29 @@ fn main() {
         .init();
 
     let output = match cli.command {
-        cli::Commands::Verify {
+        cli::Commands::Ls {
+            long,
             namespace,
-            publickey: public_key,
-            input,
-        } => cmd::verify(&namespace, &public_key, input),
-        cli::Commands::Sign {
+            remote_url,
+        } => cmd::ls(&remote_url, namespace.as_deref(), long).await,
+        cli::Commands::Audit {
+            epoch,
             namespace,
-            signingkey,
-            output,
-            input,
-        } => cmd::sign(&namespace, &signingkey, output, input),
+            remote_url,
+            long,
+            no_verify,
+            verifying_key,
+        } => {
+            cmd::audit(
+                &namespace,
+                &remote_url,
+                long,
+                !no_verify,
+                verifying_key.as_deref(),
+                epoch.as_ref(),
+            )
+            .await
+        }
     };
 
     match output {
@@ -34,5 +47,6 @@ fn main() {
             eprintln!("error: {err}");
             process::exit(1)
         }
-    }
+    };
+    Ok(())
 }

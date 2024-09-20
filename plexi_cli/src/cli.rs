@@ -1,12 +1,5 @@
-use std::path::PathBuf;
-
 use clap::{Parser, Subcommand};
-
-/// 1. First interaction
-///    plexi verify --publickey <publickey> --signature <signature> --message <message>
-/// 2. TODOs
-/// - plexi report
-/// - plexi sign
+use plexi_core::Epoch;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -20,30 +13,40 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Information about a given epoch. By default, it retrieves and validates its audit proof
     #[command(verbatim_doc_comment)]
-    Verify {
+    Audit {
+        /// URL of the auditor
+        #[arg(short, long, env = "PLEXI_REMOTE_URL")]
+        remote_url: String,
         /// Namespace ID
-        #[arg(short, long)]
+        #[arg(short, long, env = "PLEXI_NAMESPACE")]
         namespace: String,
         /// Ed25519 public key in hex format.
+        #[arg(long, env = "PLEXI_VERIFYING_KEY")]
+        verifying_key: Option<String>,
+        /// Height of the epoch to verify. If not set, the latest epoch is verified.
         #[arg(long)]
-        publickey: String,
-        /// Path to a file to read from.
-        input: Option<PathBuf>,
+        epoch: Option<Epoch>,
+        /// Enable detailed output
+        #[arg(short, long, default_value_t = false, group = "format")]
+        long: bool,
+        /// Disable signature and proof validation
+        #[arg(long, default_value_t = false, env = "PLEXI_VERIFICATION_DISABLED")]
+        no_verify: bool,
     },
+    /// List all namespaces
     #[command(verbatim_doc_comment)]
-    Sign {
+    Ls {
+        /// URL of the auditor
+        #[arg(short, long, env = "PLEXI_REMOTE_URL")]
+        remote_url: String,
         /// Namespace ID
-        #[arg(short, long)]
-        namespace: String,
-        /// Ed25519 signing key in hex format.
-        #[arg(long)]
-        signingkey: String,
-        /// Write the result to the file at path OUTPUT.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Path to a file to read from.
-        input: Option<PathBuf>,
+        #[arg(short, long, env = "PLEXI_NAMESPACE")]
+        namespace: Option<String>,
+        /// Enable detailed output
+        #[arg(short, long, default_value_t = false, group = "format")]
+        long: bool,
     },
 }
 

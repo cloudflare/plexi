@@ -6,6 +6,7 @@ use std::{
     str::FromStr,
 };
 
+use anyhow::anyhow;
 use bincode::{BorrowDecode, Decode, Encode};
 use ed25519_dalek::SIGNATURE_LENGTH;
 use prost::Message;
@@ -16,6 +17,9 @@ use utoipa::ToSchema;
 
 pub use uuid::Uuid;
 
+pub mod auditor;
+#[cfg(feature = "client")]
+pub mod client;
 pub mod crypto;
 pub mod namespaces;
 pub mod proto;
@@ -175,6 +179,18 @@ impl PartialEq<Epoch> for u64 {
     }
 }
 
+impl PartialEq<Epoch> for Epoch {
+    fn eq(&self, other: &Epoch) -> bool {
+        *self == other.0
+    }
+}
+
+impl PartialOrd<Epoch> for Epoch {
+    fn partial_cmp(&self, other: &Epoch) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
 impl Add<u64> for Epoch {
     type Output = Epoch;
 
@@ -295,6 +311,18 @@ impl From<SignatureResponse> for SignatureMessage {
             timestamp: val.timestamp,
             epoch: val.epoch,
             digest: val.digest,
+        }
+    }
+}
+
+impl From<&SignatureResponse> for SignatureMessage {
+    fn from(val: &SignatureResponse) -> Self {
+        Self {
+            version: val.version,
+            namespace: val.namespace.clone(),
+            timestamp: val.timestamp,
+            epoch: val.epoch,
+            digest: val.digest.clone(),
         }
     }
 }
@@ -430,6 +458,24 @@ impl SignatureResponse {
 
     pub fn key_id(&self) -> Option<u8> {
         self.key_id
+    }
+
+    pub fn verify(&self, verifying_key: &[u8]) -> anyhow::Result<()> {
+        // at the time of writting, all version use ed25519 keys. this simplify parsing of the verifying key
+        match self.version {
+            SignatureVersion::BincodeEd25519 => (),
+            SignatureVersion::ProtobufEd25519 => (),
+            SignatureVersion::Unknown(_) => return Err(anyhow!("Verification is not supported for the given version.")),
+        }
+        let message: SignatureMessage = self.into();
+        let message = message.to_vec()?;
+
+        let verifying_key = verifying_key.try_into().map_err(|_| anyhow!("verifying_key should have length {length}", length = ed25519_dalek::PUBLIC_KEY_LENGTH))?;
+        let Ok(verifying_key) = ed25519_dalek::VerifyingKey::from_bytes(&verifying_key) else { return Err(anyhow!("Cannot parse the provided verifying_key.")) };
+
+        let Ok(signature) = ed25519_dalek::Signature::from_slice(&self.signature()) else { return Err(anyhow!("Cannot construct an Ed25519 signature.")) };
+
+        verifying_key.verify_strict(&message, &signature).map_err(Into::into)
     }
 }
 

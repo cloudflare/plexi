@@ -1,3 +1,5 @@
+use core::fmt;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -26,6 +28,15 @@ impl Namespaces {
 impl Default for Namespaces {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl IntoIterator for Namespaces {
+    type Item = NamespaceInfo;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.namespaces.into_iter()
     }
 }
 
@@ -109,6 +120,10 @@ impl NamespaceInfo {
         self.root.as_deref()
     }
 
+    pub fn set_root(&mut self, root: &str) {
+        self.root = Some(root.to_string());
+    }
+
     pub fn status(&self) -> NamespaceStatus {
         self.status.clone()
     }
@@ -159,4 +174,15 @@ pub enum NamespaceStatus {
     Online,
     Initialization,
     Disabled,
+}
+
+impl fmt::Display for NamespaceStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Disabled => "Disabled",
+            Self::Initialization => "Initialization",
+            Self::Online => "Online",
+        };
+        write!(f, "{}", s)
+    }
 }
