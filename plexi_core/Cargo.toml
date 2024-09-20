@@ -14,7 +14,7 @@ build = "src/build.rs"
 
 [features]
 default = ["openapi"]
-auditor = ["akd"]
+auditor = ["akd", "akd/parallel_vrf", "akd/parallel_insert", "akd/experimental"]
 client = ["auditor", "reqwest"]
 openapi = ["utoipa"]
 
