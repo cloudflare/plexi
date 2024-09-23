@@ -1,5 +1,5 @@
 [package]
-name = "plexi_cli"
+name = "plexi-cli"
 description = "A flexible auditor companion client"
 version.workspace = true
 authors.workspace = true
@@ -32,4 +32,4 @@ time = { workspace = true, features = ["formatting"] }
 tokio = { workspace = true, features = ["full"] }
 
 # workspace dependencies
-plexi_core = { workspace = true, features = ["client"] }
+plexi-core = { workspace = true, features = ["client"] }

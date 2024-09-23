@@ -1,5 +1,5 @@
 [package]
-name = "plexi_core"
+name = "plexi-core"
 description = "A flexible auditor companion client"
 version.workspace = true
 authors.workspace = true
@@ -32,6 +32,11 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 utoipa = { workspace = true, optional = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
+
+# wasm32 dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
+getrandom = { workspace = true, features = ["js"] }
 
 [build-dependencies]
 prost-build = { version = "0.13" }

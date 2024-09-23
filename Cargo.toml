@@ -33,6 +33,7 @@ colored = "2.1"
 env_logger = { version = "0.11" }
 ed25519-dalek = { version = "2" }
 futures-util = "0.3"
+getrandom = "0.2"
 hex = { version = "0.4" }
 log = "0.4"
 prost = "0.13"
@@ -48,7 +49,7 @@ utoipa = "4"
 uuid = { version = "1.9", features = ["v4", "serde"] }
 
 # workspace dependencies
-plexi_core = { path = "./plexi_core" }
+plexi-core = { path = "./plexi_core" }
 
 [profile.release]
 lto = true
