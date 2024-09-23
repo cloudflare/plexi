@@ -1,13 +1,13 @@
 use core::fmt;
 use std::time::Duration;
 
-use akd::local_auditing::AuditBlobName;
-use anyhow::{anyhow, Context as _};
-use serde::de::DeserializeOwned;
 use crate::auditor::Configuration as AuditorConfiguration;
 use crate::namespaces::{NamespaceInfo, Namespaces};
 use crate::{Epoch, LastVerifiedEpoch, SignatureResponse};
-use reqwest::{Certificate, Client, Identity, Url};
+use akd::local_auditing::AuditBlobName;
+use anyhow::{anyhow, Context as _};
+use reqwest::{Certificate, Client, Identity, StatusCode, Url};
+use serde::de::DeserializeOwned;
 
 #[derive(Clone)]
 pub struct PlexiClient {
@@ -56,26 +56,44 @@ impl PlexiClient {
         })
     }
 
-    async fn fetch_json<T>(&self, url: &Url) -> anyhow::Result<T> where T: DeserializeOwned {
-        Ok(self
-            .client
-            .get(url.clone())
-            .send()
-            .await?
-            .error_for_status()
-            .with_context(|| format!("fetching {url}"))?
-            .json()
-            .await
-            .context(format!("converting {url} into json"))?)
+    pub fn base_url(&self) -> &Url {
+        &self.base_url
+    }
+
+    pub fn client(&self) -> &Client {
+        &self.client
+    }
+
+    async fn fetch_json<T>(&self, url: &Url) -> anyhow::Result<Option<T>>
+    where
+        T: DeserializeOwned,
+    {
+        let response = self.client.get(url.clone()).send().await?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        Ok(Some(
+            response
+                .error_for_status()
+                .with_context(|| format!("fetching {url}"))?
+                .json()
+                .await
+                .context(format!("converting {url} into json"))?,
+        ))
     }
 
     pub async fn auditor_config(&self) -> anyhow::Result<AuditorConfiguration> {
         let url = self.base_url.join("/info")?;
 
-        self.fetch_json(&url).await
+        match self.fetch_json(&url).await? {
+            Some(config) => Ok(config),
+            None => Err(anyhow!("auditor configuration should alwasys be defined")),
+        }
     }
 
-    pub async fn namespace(&self, namespace: &str) -> anyhow::Result<NamespaceInfo> {
+    pub async fn namespace(&self, namespace: &str) -> anyhow::Result<Option<NamespaceInfo>> {
         let url = self.base_url.join(&format!("/namespaces/{namespace}"))?;
 
         self.fetch_json(&url).await
@@ -84,39 +102,64 @@ impl PlexiClient {
     pub async fn namespaces(&self) -> anyhow::Result<Namespaces> {
         let url = self.base_url.join("/namespaces")?;
 
+        match self.fetch_json(&url).await? {
+            Some(namespaces) => Ok(namespaces),
+            None => Err(anyhow!("auditor configuration should alwasys be defined")),
+        }
+    }
+
+    pub async fn signature(
+        &self,
+        namespace: &str,
+        epoch: &Epoch,
+    ) -> anyhow::Result<Option<SignatureResponse>> {
+        let url = self
+            .base_url
+            .join(&format!("/namespaces/{namespace}/audits/{epoch}"))?;
+
         self.fetch_json(&url).await
     }
 
-    pub async fn signature(&self, namespace: &str, epoch: &Epoch) -> anyhow::Result<SignatureResponse> {
-        let url = self.base_url.join(&format!("/namespaces/{namespace}/audits/{epoch}"))?;
+    pub async fn last_verified_epoch(
+        &self,
+        namespace: &str,
+    ) -> anyhow::Result<Option<LastVerifiedEpoch>> {
+        let url = self
+            .base_url
+            .join(&format!("/namespaces/{namespace}/last-verified-epoch"))?;
 
         self.fetch_json(&url).await
     }
 
-    pub async fn last_verified_epoch(&self, namespace: &str) -> anyhow::Result<LastVerifiedEpoch> {
-        let url = self.base_url.join(&format!("/namespaces/{namespace}/last-verified-epoch"))?;
-
-        self.fetch_json(&url).await
-    }
-
-    pub async fn proof(&self, blob: &AuditBlobName, directory_url: Option<&str> ) -> anyhow::Result<Vec<u8>> {
+    pub async fn proof(
+        &self,
+        blob: &AuditBlobName,
+        directory_url: Option<&str>,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
         // to be replaced with a default to self.base_url/proofs once available
-        let Some(directory_url) = directory_url else { return Err(anyhow!("plexi does not provide proof retrieval at this time.")) };
+        let Some(directory_url) = directory_url else {
+            return Err(anyhow!(
+                "plexi does not provide proof retrieval at this time."
+            ));
+        };
 
         let url = Url::parse(directory_url)?;
         let url = url.join(&format!("/{blob}", blob = blob.to_string()))?;
 
-        Ok(self
-            .client
-            .get(url.clone())
-            .send()
-            .await?
-            .error_for_status()
-            .with_context(|| format!("fetching {url}"))?
-            .bytes()
-            .await?
-            .to_vec()
-        )
+        let response = self.client.get(url.clone()).send().await?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        Ok(Some(
+            response
+                .error_for_status()
+                .with_context(|| format!("fetching {url}"))?
+                .bytes()
+                .await?
+                .to_vec(),
+        ))
     }
 }
 
@@ -133,4 +176,3 @@ impl ClientMtls {
         Ok(ClientMtls { identity })
     }
 }
-

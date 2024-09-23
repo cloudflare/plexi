@@ -465,17 +465,32 @@ impl SignatureResponse {
         match self.version {
             SignatureVersion::BincodeEd25519 => (),
             SignatureVersion::ProtobufEd25519 => (),
-            SignatureVersion::Unknown(_) => return Err(anyhow!("Verification is not supported for the given version.")),
+            SignatureVersion::Unknown(_) => {
+                return Err(anyhow!(
+                    "Verification is not supported for the given version."
+                ))
+            }
         }
         let message: SignatureMessage = self.into();
         let message = message.to_vec()?;
 
-        let verifying_key = verifying_key.try_into().map_err(|_| anyhow!("verifying_key should have length {length}", length = ed25519_dalek::PUBLIC_KEY_LENGTH))?;
-        let Ok(verifying_key) = ed25519_dalek::VerifyingKey::from_bytes(&verifying_key) else { return Err(anyhow!("Cannot parse the provided verifying_key.")) };
+        let verifying_key = verifying_key.try_into().map_err(|_| {
+            anyhow!(
+                "verifying_key should have length {length}",
+                length = ed25519_dalek::PUBLIC_KEY_LENGTH
+            )
+        })?;
+        let Ok(verifying_key) = ed25519_dalek::VerifyingKey::from_bytes(&verifying_key) else {
+            return Err(anyhow!("Cannot parse the provided verifying_key."));
+        };
 
-        let Ok(signature) = ed25519_dalek::Signature::from_slice(&self.signature()) else { return Err(anyhow!("Cannot construct an Ed25519 signature.")) };
+        let Ok(signature) = ed25519_dalek::Signature::from_slice(&self.signature()) else {
+            return Err(anyhow!("Cannot construct an Ed25519 signature."));
+        };
 
-        verifying_key.verify_strict(&message, &signature).map_err(Into::into)
+        verifying_key
+            .verify_strict(&message, &signature)
+            .map_err(Into::into)
     }
 }
 

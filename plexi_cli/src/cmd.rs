@@ -6,7 +6,7 @@ use std::{
 };
 
 use akd::local_auditing::AuditBlobName;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use log::log_enabled;
 use plexi_core::{
@@ -43,7 +43,9 @@ pub async fn ls(remote_url: &str, namespace: Option<&str>, long: bool) -> Result
 
     let namespaces = if let Some(namespace) = namespace {
         let mut namespaces = Namespaces::new();
-        let info = client.namespace(namespace).await?;
+        let Some(info) = client.namespace(namespace).await? else {
+            return Err(anyhow!("namespace {namespace} does not exist"));
+        };
         namespaces.push(info);
         namespaces
     } else {
@@ -197,11 +199,19 @@ pub async fn audit(
     let epoch = match epoch {
         Some(epoch) => epoch,
         None => {
-            let last_verified_epoch = client.last_verified_epoch(namespace).await?;
+            let Some(last_verified_epoch) = client.last_verified_epoch(namespace).await? else {
+                return Err(anyhow!(
+                    "namespace {namespace} does not have a latest epoch. Please specify one"
+                ));
+            };
             &last_verified_epoch.epoch()
         }
     };
-    let signature = client.signature(namespace, epoch).await?;
+    let Some(signature) = client.signature(namespace, epoch).await? else {
+        return Err(anyhow!(
+            "Signature not found for {namespace} at epoch {epoch}"
+        ));
+    };
 
     // no verification requested, we can stop here
     if !verify {
@@ -268,8 +278,31 @@ pub async fn audit(
     }
 
     // then download the proof and verify it
+    if log_enabled!(log::Level::Error) {
+        eprintln!("Audit proof verification enabled. It can take a few seconds");
+    }
+    async fn print_dots() {
+        let mut interval = interval(Duration::from_secs(1));
+        loop {
+            interval.tick().await;
+            if log_enabled!(log::Level::Error) {
+                eprint!(".");
+            }
+            std::io::stderr().flush().unwrap();
+        }
+    }
+
+    let dots_handle = tokio::spawn(print_dots());
+
     // given Cloudflare does not expose the proof at the time of writing, uses the log directory and assume it's formatted like what WhatsApp provides
-    let namespace_info = client.namespace(namespace).await?;
+    let Some(namespace_info) = client.namespace(namespace).await? else {
+        return format_audit_response(
+            long,
+            &signature,
+            &VerificationStatus::Success,
+            &VerificationStatus::Failed(format!("namespace {namespace} does not exist")),
+        );
+    };
     // if the namespace does not have a log directory, it means it does not provide proofs
     let Some(log_directory) = namespace_info.log_directory() else {
         return format_audit_response(
@@ -335,10 +368,10 @@ pub async fn audit(
         }
     }
 
-    // now download and verify
     let previous_signature = client
         .signature(namespace, &(*signature.epoch() - 1))
-        .await?;
+        .await?
+        .expect("Epoch is not the root, there should be a previous signature");
 
     let Ok(current_hash) = signature.digest().try_into() else {
         return format_audit_response(
@@ -363,22 +396,14 @@ pub async fn audit(
         previous_hash,
         current_hash,
     };
-    let raw_proof = client.proof(&blob, Some(log_directory)).await?;
-    if log_enabled!(log::Level::Error) {
-        eprintln!("Audit proof verification enabled. It can take a few seconds");
-    }
-    async fn print_dots() {
-        let mut interval = interval(Duration::from_secs(1));
-        loop {
-            interval.tick().await;
-            if log_enabled!(log::Level::Error) {
-                eprint!(".");
-            }
-            std::io::stderr().flush().unwrap();
-        }
-    }
-
-    let dots_handle = tokio::spawn(print_dots());
+    let Some(raw_proof) = client.proof(&blob, Some(log_directory)).await? else {
+        return format_audit_response(
+            long,
+            &signature,
+            &VerificationStatus::Success,
+            &VerificationStatus::Failed("cannot retrieve audit proof".to_string()),
+        );
+    };
 
     let verification = auditor::verify_raw_proof(&blob, &raw_proof).await;
 

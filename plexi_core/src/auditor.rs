@@ -103,13 +103,12 @@ pub async fn verify_raw_proof(blob: &AuditBlobName, raw_proof: &[u8]) -> anyhow:
         .context("converting parsed protobuf proof to `SingleAppendOnlyProof`")?;
 
     akd::auditor::verify_consecutive_append_only::<WhatsAppV1Configuration>(
-        &proof, blob.previous_hash, blob.current_hash, blob.epoch,
+        &proof,
+        blob.previous_hash,
+        blob.current_hash,
+        blob.epoch,
     )
     .await
-    .with_context(|| {
-        format!(
-            "verifying raw proof: {blob}",
-            blob = blob.to_string()
-        )
-    }).map_err(|e| anyhow!(e))
+    .with_context(|| format!("verifying raw proof: {blob}", blob = blob.to_string()))
+    .map_err(|e| anyhow!(e))
 }
