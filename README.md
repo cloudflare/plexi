@@ -25,7 +25,7 @@ Plexi is a flexible auditor for [Key Transparency systems](https://blog.cloudfla
 
 | Environment                                                   | CLI Command           |
 |:--------------------------------------------------------------|:----------------------|
-| [Cargo](https://www.rust-lang.org/tools/install) (Rust 1.76+) | `cargo install plexi` |
+| [Cargo](https://www.rust-lang.org/tools/install) (Rust 1.81+) | `cargo install plexi` |
 
 ## Usage
 
