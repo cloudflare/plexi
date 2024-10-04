@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::anyhow;
+#[cfg(feature = "bincode")]
 use bincode::{BorrowDecode, Decode, Encode};
 use ed25519_dalek::SIGNATURE_LENGTH;
 use prost::Message;
@@ -23,11 +24,6 @@ pub mod client;
 pub mod crypto;
 pub mod namespaces;
 pub mod proto;
-
-const SIGNATURE_VERSIONS: [SignatureVersion; 2] = [
-    SignatureVersion::ProtobufEd25519,
-    SignatureVersion::BincodeEd25519,
-];
 
 #[derive(Error, Debug)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -49,6 +45,7 @@ pub enum PlexiError {
 #[repr(u32)]
 pub enum SignatureVersion {
     ProtobufEd25519 = 0x0001,
+    #[cfg(feature = "bincode")]
     BincodeEd25519 = 0x0002,
     Unknown(u32),
 }
@@ -57,6 +54,7 @@ impl From<SignatureVersion> for u32 {
     fn from(val: SignatureVersion) -> Self {
         match val {
             SignatureVersion::ProtobufEd25519 => 0x0001,
+            #[cfg(feature = "bincode")]
             SignatureVersion::BincodeEd25519 => 0x0002,
             SignatureVersion::Unknown(u) => u,
         }
@@ -67,6 +65,7 @@ impl From<u32> for SignatureVersion {
     fn from(u: u32) -> Self {
         match u {
             0x0001 => Self::ProtobufEd25519,
+            #[cfg(feature = "bincode")]
             0x0002 => Self::BincodeEd25519,
             _ => Self::Unknown(u),
         }
@@ -86,6 +85,7 @@ impl fmt::Display for SignatureVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::ProtobufEd25519 => "0x0001",
+            #[cfg(feature = "bincode")]
             Self::BincodeEd25519 => "0x0002",
             Self::Unknown(_u) => "unknown",
         };
@@ -93,6 +93,7 @@ impl fmt::Display for SignatureVersion {
     }
 }
 
+#[cfg(feature = "bincode")]
 impl Encode for SignatureVersion {
     fn encode<E: bincode::enc::Encoder>(
         &self,
@@ -103,6 +104,7 @@ impl Encode for SignatureVersion {
     }
 }
 
+#[cfg(feature = "bincode")]
 impl Decode for SignatureVersion {
     fn decode<D: bincode::de::Decoder>(
         decoder: &mut D,
@@ -112,6 +114,7 @@ impl Decode for SignatureVersion {
     }
 }
 
+#[cfg(feature = "bincode")]
 impl<'de> BorrowDecode<'de> for SignatureVersion {
     fn borrow_decode<B: bincode::de::BorrowDecoder<'de>>(
         buffer: &mut B,
@@ -121,7 +124,8 @@ impl<'de> BorrowDecode<'de> for SignatureVersion {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Epoch(u64);
 
@@ -223,8 +227,10 @@ impl Sub<Epoch> for Epoch {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 pub struct SignatureMessage {
     version: SignatureVersion,
     namespace: String,
@@ -243,16 +249,17 @@ impl SignatureMessage {
         epoch: &Epoch,
         digest: Vec<u8>,
     ) -> Result<Self, PlexiError> {
-        if !SIGNATURE_VERSIONS.contains(version) {
-            return Err(PlexiError::BadParameter("version".to_string()));
+        match version {
+            SignatureVersion::Unknown(_) => Err(PlexiError::BadParameter("version".to_string())),
+            _ => 
+            Ok(Self {
+                version: *version,
+                namespace,
+                timestamp,
+                epoch: *epoch,
+                digest,
+            })
         }
-        Ok(Self {
-            version: *version,
-            namespace,
-            timestamp,
-            epoch: *epoch,
-            digest,
-        })
     }
 
     pub fn version(&self) -> &SignatureVersion {
@@ -275,6 +282,7 @@ impl SignatureMessage {
         self.digest.clone()
     }
 
+    #[cfg(feature = "bincode")]
     fn to_vec_bincode(&self) -> Result<Vec<u8>, PlexiError> {
         bincode::encode_to_vec(self, bincode::config::legacy())
             .map_err(|_e| PlexiError::Serialization)
@@ -297,6 +305,7 @@ impl SignatureMessage {
     pub fn to_vec(&self) -> Result<Vec<u8>, PlexiError> {
         match self.version {
             SignatureVersion::ProtobufEd25519 => self.to_vec_proto(),
+            #[cfg(feature = "bincode")]
             SignatureVersion::BincodeEd25519 => self.to_vec_bincode(),
             _ => Err(PlexiError::Serialization),
         }
@@ -463,6 +472,7 @@ impl SignatureResponse {
     pub fn verify(&self, verifying_key: &[u8]) -> anyhow::Result<()> {
         // at the time of writting, all version use ed25519 keys. this simplify parsing of the verifying key
         match self.version {
+            #[cfg(feature = "bincode")]
             SignatureVersion::BincodeEd25519 => (),
             SignatureVersion::ProtobufEd25519 => (),
             SignatureVersion::Unknown(_) => {
@@ -676,6 +686,8 @@ mod tests {
 
             let key_id = ed25519_public_key_to_key_id(&verifying_key.to_bytes());
             assert_eq!(key_id, tv.key_id);
+
+            println!("signature version: {}", tv.signature_version); 
 
             let message = SignatureMessage::new(
                 &tv.signature_version,
