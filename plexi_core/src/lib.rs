@@ -227,7 +227,6 @@ impl Sub<Epoch> for Epoch {
     }
 }
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
@@ -251,14 +250,13 @@ impl SignatureMessage {
     ) -> Result<Self, PlexiError> {
         match version {
             SignatureVersion::Unknown(_) => Err(PlexiError::BadParameter("version".to_string())),
-            _ => 
-            Ok(Self {
+            _ => Ok(Self {
                 version: *version,
                 namespace,
                 timestamp,
                 epoch: *epoch,
                 digest,
-            })
+            }),
         }
     }
 
