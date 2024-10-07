@@ -26,7 +26,6 @@ license = "Apache-2.0"
 [workspace.dependencies]
 akd = { version = "0.11", default-features = false }
 anyhow = "1.0"
-bincode = "2.0.0-rc.3"
 clap = { version = "4.5", features = ["derive"] }
 clap-verbosity-flag = "2.2.0"
 colored = "2.1"
