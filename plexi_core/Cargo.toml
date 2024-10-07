@@ -13,7 +13,7 @@ categories.workspace = true
 build = "src/build.rs"
 
 [features]
-default = ["openapi"]
+default = ["openapi", "bincode"]
 auditor = ["akd", "akd/parallel_vrf", "akd/parallel_insert", "akd/experimental"]
 client = ["auditor", "reqwest", "bincode"]
 openapi = ["utoipa"]
