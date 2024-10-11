@@ -22,7 +22,7 @@ bincode = ["dep:bincode"]
 [dependencies]
 akd = { workspace = true, features = ["whatsapp_v1", "public_auditing"], optional = true }
 anyhow = { workspace = true }
-bincode = { version = "2.0.0-rc.3", optional = true }
+bincode = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true, features = ["serde"] }
 prost = { workspace = true }
