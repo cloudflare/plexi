@@ -13,15 +13,16 @@ categories.workspace = true
 build = "src/build.rs"
 
 [features]
-default = ["openapi"]
+default = ["openapi", "bincode"]
 auditor = ["akd", "akd/parallel_vrf", "akd/parallel_insert", "akd/experimental"]
-client = ["auditor", "reqwest"]
+client = ["auditor", "reqwest", "bincode"]
 openapi = ["utoipa"]
+bincode = ["dep:bincode"]
 
 [dependencies]
 akd = { workspace = true, features = ["whatsapp_v1", "public_auditing"], optional = true }
 anyhow = { workspace = true }
-bincode = { workspace = true }
+bincode = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true, features = ["serde"] }
 prost = { workspace = true }
