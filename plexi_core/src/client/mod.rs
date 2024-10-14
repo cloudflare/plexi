@@ -22,7 +22,11 @@ impl fmt::Debug for PlexiClient {
 }
 
 impl PlexiClient {
-    pub fn new(base_url: Url, mtls: Option<ClientMtls>) -> anyhow::Result<Self> {
+    pub fn new(
+        base_url: Url,
+        mtls: Option<ClientMtls>,
+        user_agent: Option<&str>,
+    ) -> anyhow::Result<Self> {
         let mut client_builder = Client::builder();
 
         if let Ok(bundle) = std::env::var("SSL_CERT_FILE") {
@@ -44,6 +48,10 @@ impl PlexiClient {
 
         if let Some(mtls) = mtls {
             client_builder = client_builder.identity(mtls.identity);
+        }
+
+        if let Some(user_agent) = user_agent {
+            client_builder = client_builder.user_agent(user_agent);
         }
 
         Ok(Self {
