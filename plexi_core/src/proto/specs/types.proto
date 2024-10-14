@@ -6,7 +6,7 @@ message Epoch {
 }
 
 message SignatureMessage {
-    required uint32 version = 1;
+    required uint32 ciphersuite = 1;
     required string namespace = 2;
     required uint64 timestamp = 3;
     required Epoch epoch = 4;

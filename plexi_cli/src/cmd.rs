@@ -10,11 +10,12 @@ use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use log::log_enabled;
 use plexi_core::{
-    auditor, client::PlexiClient, namespaces::Namespaces, Epoch, SignatureResponse,
-    SignatureVersion,
+    auditor, client::PlexiClient, namespaces::Namespaces, Ciphersuite, Epoch, SignatureResponse,
 };
 use reqwest::Url;
 use tokio::time::interval;
+
+const APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
 #[allow(dead_code)]
 pub fn file_or_stdin(input: Option<PathBuf>) -> Result<Box<dyn io::Read>> {
@@ -39,7 +40,7 @@ pub fn file_or_stdout(output: Option<PathBuf>) -> Result<Box<dyn io::Write>> {
 }
 
 pub async fn ls(remote_url: &str, namespace: Option<&str>, long: bool) -> Result<String> {
-    let client = PlexiClient::new(Url::parse(remote_url)?, None)?;
+    let client = PlexiClient::new(Url::parse(remote_url)?, None, Some(APP_USER_AGENT))?;
 
     let namespaces = if let Some(namespace) = namespace {
         let mut namespaces = Namespaces::new();
@@ -94,11 +95,11 @@ pub async fn ls(remote_url: &str, namespace: Option<&str>, long: bool) -> Result
     Ok(result.join("\n"))
 }
 
-fn format_ciphersuite(ciphersuite: &SignatureVersion) -> String {
+fn format_ciphersuite(ciphersuite: &Ciphersuite) -> String {
     match ciphersuite {
-        SignatureVersion::BincodeEd25519 => "ed25519(bincode)".to_string(),
-        SignatureVersion::ProtobufEd25519 => "ed25519(protobuf)".to_string(),
-        SignatureVersion::Unknown(u) => format!("unknown {u}"),
+        Ciphersuite::BincodeEd25519 => "ed25519(bincode)".to_string(),
+        Ciphersuite::ProtobufEd25519 => "ed25519(protobuf)".to_string(),
+        Ciphersuite::Unknown(u) => format!("unknown {u}"),
     }
 }
 
@@ -195,7 +196,7 @@ pub async fn audit(
     verifying_key: Option<&str>,
     epoch: Option<&Epoch>,
 ) -> Result<String> {
-    let client = PlexiClient::new(Url::parse(remote_url)?, None)?;
+    let client = PlexiClient::new(Url::parse(remote_url)?, None, Some(APP_USER_AGENT))?;
     let epoch = match epoch {
         Some(epoch) => epoch,
         None => {

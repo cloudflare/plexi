@@ -72,7 +72,7 @@ jobs:
           command: fetch
       - name: Build for target
         working-directory: ./plexi_core
-        run: cargo build --verbose --no-default-features --target ${{ matrix.target }}
+        run: cargo build --verbose --no-default-features --features bincode --target ${{ matrix.target }}
 
   bitrot:
     name: Bitrot

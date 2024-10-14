@@ -11,6 +11,7 @@ use anyhow::anyhow;
 use bincode::{BorrowDecode, Decode, Encode};
 use ed25519_dalek::SIGNATURE_LENGTH;
 use prost::Message;
+use serde::{de, Deserializer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 #[cfg(feature = "openapi")]
@@ -24,6 +25,9 @@ pub mod client;
 pub mod crypto;
 pub mod namespaces;
 pub mod proto;
+
+const SIGNATURE_VERSIONS: [Ciphersuite; 2] =
+    [Ciphersuite::ProtobufEd25519, Ciphersuite::BincodeEd25519];
 
 #[derive(Error, Debug)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -43,36 +47,33 @@ pub enum PlexiError {
 #[serde(into = "u32")]
 #[serde(from = "u32")]
 #[repr(u32)]
-pub enum SignatureVersion {
+pub enum Ciphersuite {
     ProtobufEd25519 = 0x0001,
-    #[cfg(feature = "bincode")]
     BincodeEd25519 = 0x0002,
     Unknown(u32),
 }
 
-impl From<SignatureVersion> for u32 {
-    fn from(val: SignatureVersion) -> Self {
+impl From<Ciphersuite> for u32 {
+    fn from(val: Ciphersuite) -> Self {
         match val {
-            SignatureVersion::ProtobufEd25519 => 0x0001,
-            #[cfg(feature = "bincode")]
-            SignatureVersion::BincodeEd25519 => 0x0002,
-            SignatureVersion::Unknown(u) => u,
+            Ciphersuite::ProtobufEd25519 => 0x0001,
+            Ciphersuite::BincodeEd25519 => 0x0002,
+            Ciphersuite::Unknown(u) => u,
         }
     }
 }
 
-impl From<u32> for SignatureVersion {
+impl From<u32> for Ciphersuite {
     fn from(u: u32) -> Self {
         match u {
             0x0001 => Self::ProtobufEd25519,
-            #[cfg(feature = "bincode")]
             0x0002 => Self::BincodeEd25519,
             _ => Self::Unknown(u),
         }
     }
 }
 
-impl FromStr for SignatureVersion {
+impl FromStr for Ciphersuite {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -81,11 +82,10 @@ impl FromStr for SignatureVersion {
     }
 }
 
-impl fmt::Display for SignatureVersion {
+impl fmt::Display for Ciphersuite {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::ProtobufEd25519 => "0x0001",
-            #[cfg(feature = "bincode")]
             Self::BincodeEd25519 => "0x0002",
             Self::Unknown(_u) => "unknown",
         };
@@ -94,7 +94,7 @@ impl fmt::Display for SignatureVersion {
 }
 
 #[cfg(feature = "bincode")]
-impl Encode for SignatureVersion {
+impl Encode for Ciphersuite {
     fn encode<E: bincode::enc::Encoder>(
         &self,
         encoder: &mut E,
@@ -105,7 +105,7 @@ impl Encode for SignatureVersion {
 }
 
 #[cfg(feature = "bincode")]
-impl Decode for SignatureVersion {
+impl Decode for Ciphersuite {
     fn decode<D: bincode::de::Decoder>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
@@ -115,7 +115,7 @@ impl Decode for SignatureVersion {
 }
 
 #[cfg(feature = "bincode")]
-impl<'de> BorrowDecode<'de> for SignatureVersion {
+impl<'de> BorrowDecode<'de> for Ciphersuite {
     fn borrow_decode<B: bincode::de::BorrowDecoder<'de>>(
         buffer: &mut B,
     ) -> Result<Self, bincode::error::DecodeError> {
@@ -228,40 +228,39 @@ impl Sub<Epoch> for Epoch {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureMessage {
-    version: SignatureVersion,
+    ciphersuite: Ciphersuite,
     namespace: String,
     timestamp: u64,
     epoch: Epoch,
     #[serde(with = "hex::serde")]
     digest: Vec<u8>,
-    // TODO: consider adding a version
 }
 
 impl SignatureMessage {
     pub fn new(
-        version: &SignatureVersion,
+        ciphersuite: &Ciphersuite,
         namespace: String,
         timestamp: u64,
         epoch: &Epoch,
         digest: Vec<u8>,
     ) -> Result<Self, PlexiError> {
-        match version {
-            SignatureVersion::Unknown(_) => Err(PlexiError::BadParameter("version".to_string())),
-            _ => Ok(Self {
-                version: *version,
-                namespace,
-                timestamp,
-                epoch: *epoch,
-                digest,
-            }),
+        if !SIGNATURE_VERSIONS.contains(ciphersuite) {
+            return Err(PlexiError::BadParameter("version".to_string()));
         }
+        Ok(Self {
+            ciphersuite: *ciphersuite,
+            namespace,
+            timestamp,
+            epoch: *epoch,
+            digest,
+        })
     }
 
-    pub fn version(&self) -> &SignatureVersion {
-        &self.version
+    pub fn ciphersuite(&self) -> &Ciphersuite {
+        &self.ciphersuite
     }
 
     pub fn namespace(&self) -> &str {
@@ -288,7 +287,7 @@ impl SignatureMessage {
 
     fn to_vec_proto(&self) -> Result<Vec<u8>, PlexiError> {
         let message = proto::types::SignatureMessage {
-            version: (*self.version()).into(),
+            ciphersuite: (*self.ciphersuite()).into(),
             namespace: self.namespace().to_string(),
             timestamp: self.timestamp(),
             epoch: proto::types::Epoch {
@@ -301,10 +300,10 @@ impl SignatureMessage {
     }
 
     pub fn to_vec(&self) -> Result<Vec<u8>, PlexiError> {
-        match self.version {
-            SignatureVersion::ProtobufEd25519 => self.to_vec_proto(),
+        match self.ciphersuite {
+            Ciphersuite::ProtobufEd25519 => self.to_vec_proto(),
             #[cfg(feature = "bincode")]
-            SignatureVersion::BincodeEd25519 => self.to_vec_bincode(),
+            Ciphersuite::BincodeEd25519 => self.to_vec_bincode(),
             _ => Err(PlexiError::Serialization),
         }
     }
@@ -313,7 +312,7 @@ impl SignatureMessage {
 impl From<SignatureResponse> for SignatureMessage {
     fn from(val: SignatureResponse) -> Self {
         Self {
-            version: val.version,
+            ciphersuite: val.ciphersuite,
             namespace: val.namespace,
             timestamp: val.timestamp,
             epoch: val.epoch,
@@ -325,7 +324,7 @@ impl From<SignatureResponse> for SignatureMessage {
 impl From<&SignatureResponse> for SignatureMessage {
     fn from(val: &SignatureResponse) -> Self {
         Self {
-            version: val.version,
+            ciphersuite: val.ciphersuite,
             namespace: val.namespace.clone(),
             timestamp: val.timestamp,
             epoch: val.epoch,
@@ -386,10 +385,11 @@ impl fmt::Debug for SignatureRequest {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureResponse {
-    version: SignatureVersion,
+    version: Ciphersuite,
+    ciphersuite: Ciphersuite,
     namespace: String,
     timestamp: u64,
     epoch: Epoch,
@@ -405,6 +405,7 @@ impl fmt::Debug for SignatureResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SignatureResponse")
             .field("version", &self.version)
+            .field("ciphersuite", &self.ciphersuite)
             .field("namespace", &self.namespace)
             .field("timestamp", &self.timestamp)
             .field("epoch", &self.epoch)
@@ -416,8 +417,10 @@ impl fmt::Debug for SignatureResponse {
 }
 
 impl SignatureResponse {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        version: &SignatureVersion,
+        version: &Ciphersuite,
+        ciphersuite: &Ciphersuite,
         namespace: String,
         timestamp: u64,
         epoch: &Epoch,
@@ -427,6 +430,7 @@ impl SignatureResponse {
     ) -> Self {
         Self {
             version: *version,
+            ciphersuite: *ciphersuite,
             namespace,
             timestamp,
             epoch: *epoch,
@@ -436,10 +440,12 @@ impl SignatureResponse {
         }
     }
 
-    pub fn version(&self) -> &SignatureVersion {
+    pub fn version(&self) -> &Ciphersuite {
         &self.version
     }
-
+    pub fn ciphersuite(&self) -> &Ciphersuite {
+        &self.ciphersuite
+    }
     pub fn namespace(&self) -> &str {
         &self.namespace
     }
@@ -471,9 +477,9 @@ impl SignatureResponse {
         // at the time of writting, all version use ed25519 keys. this simplify parsing of the verifying key
         match self.version {
             #[cfg(feature = "bincode")]
-            SignatureVersion::BincodeEd25519 => (),
-            SignatureVersion::ProtobufEd25519 => (),
-            SignatureVersion::Unknown(_) => {
+            Ciphersuite::BincodeEd25519 => (),
+            Ciphersuite::ProtobufEd25519 => (),
+            Ciphersuite::Unknown(_) => {
                 return Err(anyhow!(
                     "Verification is not supported for the given version."
                 ))
@@ -509,7 +515,10 @@ impl From<Report> for HashMap<String, String> {
     fn from(val: Report) -> Self {
         let mut map = HashMap::new();
         let version: u32 = (*val.version()).into();
+        let ciphersuite: u32 = (*val.ciphersuite()).into();
+
         map.insert("version".to_string(), version.to_string());
+        map.insert("ciphersuite".to_string(), ciphersuite.to_string());
         map.insert("namespace".to_string(), val.namespace().to_string());
         map.insert("timestamp".to_string(), val.timestamp.to_string());
         map.insert("epoch".to_string(), val.epoch.to_string());
@@ -529,6 +538,11 @@ impl TryFrom<HashMap<String, String>> for Report {
         Ok(Self {
             version: value
                 .get("version")
+                .ok_or_else(|| PlexiError::MissingParameter("version".to_string()))?
+                .parse()
+                .map_err(|_| PlexiError::BadParameter("version".to_string()))?,
+            ciphersuite: value
+                .get("ciphersuite")
                 .ok_or_else(|| PlexiError::MissingParameter("version".to_string()))?
                 .parse()
                 .map_err(|_| PlexiError::BadParameter("version".to_string()))?,
@@ -564,6 +578,59 @@ impl TryFrom<HashMap<String, String>> for Report {
                 .map_err(|_| PlexiError::BadParameter("key_id".to_string()))?,
         })
     }
+}
+
+impl<'de> Deserialize<'de> for SignatureResponse {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_signature_response(deserializer)
+    }
+}
+
+// Mirror ciphersuite to version and vice versa while customer transitions to ciphersuite
+fn deserialize_signature_response<'de, D>(deserializer: D) -> Result<SignatureResponse, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct TempSignatureResponse {
+        version: Option<Ciphersuite>,
+        ciphersuite: Option<Ciphersuite>,
+        namespace: String,
+        timestamp: u64,
+        epoch: Epoch,
+        #[serde(with = "hex::serde")]
+        digest: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        signature: Vec<u8>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        key_id: Option<u8>,
+    }
+
+    let temp = TempSignatureResponse::deserialize(deserializer)?;
+
+    let suite_value = match (temp.version, temp.ciphersuite) {
+        (Some(v), _) => v,
+        (_, Some(c)) => c,
+        _ => {
+            return Err(de::Error::missing_field(
+                "Either version or ciphersuite must be provided",
+            ))
+        }
+    };
+
+    Ok(SignatureResponse {
+        version: suite_value,
+        ciphersuite: suite_value,
+        namespace: temp.namespace,
+        timestamp: temp.timestamp,
+        epoch: temp.epoch,
+        digest: temp.digest,
+        signature: temp.signature,
+        key_id: temp.key_id,
+    })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -656,7 +723,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg(feature = "bincode")]
     fn test_vector() {
         const TEST_VECTORS: &str = std::include_str!("../tests/test-vectors.json");
 
@@ -674,7 +740,7 @@ mod tests {
             digest: Vec<u8>,
             #[serde(with = "hex::serde")]
             signature: [u8; SIGNATURE_LENGTH],
-            signature_version: SignatureVersion,
+            ciphersuite: Ciphersuite,
         }
 
         let test_vectors: Vec<TestVector> = serde_json::from_str(TEST_VECTORS).unwrap();
@@ -687,7 +753,7 @@ mod tests {
             assert_eq!(key_id, tv.key_id);
 
             let message = SignatureMessage::new(
-                &tv.signature_version,
+                &tv.ciphersuite,
                 tv.namespace,
                 tv.timestamp,
                 &tv.epoch,

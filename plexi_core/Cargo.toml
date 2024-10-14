@@ -15,9 +15,9 @@ build = "src/build.rs"
 [features]
 default = ["openapi", "bincode"]
 auditor = ["akd", "akd/parallel_vrf", "akd/parallel_insert", "akd/experimental"]
-client = ["auditor", "reqwest", "bincode"]
-openapi = ["utoipa"]
 bincode = ["dep:bincode"]
+client = ["auditor", "bincode", "reqwest"]
+openapi = ["utoipa"]
 
 [dependencies]
 akd = { workspace = true, features = ["whatsapp_v1", "public_auditing"], optional = true }

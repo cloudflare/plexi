@@ -8,7 +8,7 @@
         "epoch": 1,
         "digest": "1111111111111111111111111111111111111111111111111111111111111111",
         "signature": "769d1ae73792dd8da1515793ba29f2f33f2fca84ba7386f9a01d8272e67c4379bdcfd91ea4fa49eafd8f243ac36fe3a7aae90ae92f1729c3c468ddf4e6d2a309",
-        "signature_version": 1
+        "ciphersuite": 1
     },
     {
         "signing_key": "d6af1bca3db4fc2766b0c483706c20bf4837a46d54c1d39c2a34a9088572d712",
@@ -19,6 +19,6 @@
         "epoch": 1,
         "digest": "1111111111111111111111111111111111111111111111111111111111111111",
         "signature": "a73807da5d7e12f7ed6328c918e2071173793fea3af96d98f0a649a5f498b5bfebbe96ce7b21b027ccc04e69ac8cf40c2ed2d45ee23b0c30c00abca9753f7909",
-        "signature_version": 2
+        "ciphersuite": 2
     }
 ]
