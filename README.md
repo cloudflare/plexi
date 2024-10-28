@@ -31,7 +31,7 @@ Plexi is a flexible auditor for [Key Transparency systems](https://blog.cloudfla
 
 Use the `--help` option for more details about the commands and their options.
 
-```bash
+```shell
 plexi [OPTIONS] <COMMAND>
 ```
 
@@ -65,6 +65,7 @@ The Key Transparency Auditor vouches for Log validity by ensuring epoch uniquene
 `plexi audit` provides information about a given epoch and its validity. It can perform a local audit to confirm the auditor behaviour.
 
 For instance, to verify WhatsApp Log auditted by Cloudflare Auditor, run the following:
+
 ```shell
 > plexi audit --remote-url 'https://plexi.key-transparency.cloudflare.com' --namespace 'whatsapp.key-transparency.v1' --long
 Namespace
@@ -77,6 +78,15 @@ Signature (2024-09-23T16:53:45Z)
   Signature         	: fe94973e19da826487b637c019d3ce52f0c08093ada00b4fe6563e2f8117b4345121342bc33aae249be47979dfe704478e2c18aed86e674df9f934b718949c08
   Signature verification: success
   Proof verification	: success
+```
+
+If you already know the auditor verifying key, you can pass it via `--verifying-key`. Plexi will verify that the key is advertised by the auditor, and that the signature is valid against it.
+
+```shell
+plexi audit \
+  --remote-url 'https://plexi.key-transparency.cloudflare.com' \
+  --namespace 'whatsapp.key-transparency.v1' \
+  --verifying-key '2bbfbb39997fdb95feee40ef9f8827de0256732be06f64ed6408cc7e97c7f4d4'
 ```
 
 ## Conduct
