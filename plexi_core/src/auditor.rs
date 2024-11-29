@@ -1,7 +1,12 @@
 use std::collections::HashMap;
 
 #[cfg(feature = "auditor")]
-use akd::{local_auditing::AuditBlobName, SingleAppendOnlyProof, WhatsAppV1Configuration};
+use akd::{
+    append_only_zks::InsertMode,
+    local_auditing::AuditBlobName,
+    storage::{memory::AsyncInMemoryDatabase, StorageManager},
+    Azks, Digest, SingleAppendOnlyProof, WhatsAppV1Configuration,
+};
 #[cfg(feature = "auditor")]
 use anyhow::anyhow;
 use anyhow::Context as _;
@@ -91,6 +96,31 @@ impl Configuration {
     pub fn logs(&self) -> &Vec<String> {
         &self.logs
     }
+}
+
+#[cfg(feature = "auditor")]
+pub async fn compute_start_root_hash(raw_proof: &[u8]) -> anyhow::Result<Digest> {
+    let proto = akd::proto::specs::types::SingleAppendOnlyProof::parse_from_bytes(raw_proof)
+        .context("unable to parse proof bytes")?;
+
+    let proof = SingleAppendOnlyProof::try_from(&proto)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("converting parsed protobuf proof to `SingleAppendOnlyProof`")?;
+
+    let db = AsyncInMemoryDatabase::new();
+    let manager = StorageManager::new_no_cache(db);
+
+    let mut azks = Azks::new::<WhatsAppV1Configuration, _>(&manager).await?;
+    azks.batch_insert_nodes::<WhatsAppV1Configuration, _>(
+        &manager,
+        proof.unchanged_nodes.clone(),
+        InsertMode::Auditor,
+    )
+    .await?;
+
+    Ok(azks
+        .get_root_hash::<WhatsAppV1Configuration, _>(&manager)
+        .await?)
 }
 
 #[cfg(feature = "auditor")]

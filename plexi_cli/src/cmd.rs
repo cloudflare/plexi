@@ -1,8 +1,7 @@
 use std::{
     fmt, fs,
-    io::{self, Write},
+    io::{self, Read},
     path::PathBuf,
-    time::Duration,
 };
 
 use akd::local_auditing::AuditBlobName;
@@ -13,11 +12,11 @@ use plexi_core::{
     auditor, client::PlexiClient, namespaces::Namespaces, Ciphersuite, Epoch, SignatureResponse,
 };
 use reqwest::Url;
-use tokio::time::interval;
+
+use crate::print::print_dots;
 
 const APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
-#[allow(dead_code)]
 pub fn file_or_stdin(input: Option<PathBuf>) -> Result<Box<dyn io::Read>> {
     let reader: Box<dyn io::Read> = match input {
         Some(path) => Box::new(io::BufReader::new(
@@ -282,18 +281,8 @@ pub async fn audit(
     if log_enabled!(log::Level::Error) {
         eprintln!("Audit proof verification enabled. It can take a few seconds");
     }
-    async fn print_dots() {
-        let mut interval = interval(Duration::from_secs(1));
-        loop {
-            interval.tick().await;
-            if log_enabled!(log::Level::Error) {
-                eprint!(".");
-            }
-            std::io::stderr().flush().unwrap();
-        }
-    }
 
-    let dots_handle = tokio::spawn(print_dots());
+    let dots_handle = print_dots();
 
     // given Cloudflare does not expose the proof at the time of writing, uses the log directory and assume it's formatted like what WhatsApp provides
     let Some(namespace_info) = client.namespace(namespace).await? else {
@@ -413,18 +402,126 @@ pub async fn audit(
     }
     dots_handle.abort();
 
-    match verification {
-        Ok(_) => format_audit_response(
-            long,
-            &signature,
-            &VerificationStatus::Success,
-            &VerificationStatus::Success,
-        ),
-        Err(e) => format_audit_response(
+    if let Err(e) = verification {
+        return format_audit_response(
             long,
             &signature,
             &VerificationStatus::Success,
             &VerificationStatus::Failed(e.to_string()),
-        ),
+        );
     }
+    format_audit_response(
+        long,
+        &signature,
+        &VerificationStatus::Success,
+        &VerificationStatus::Success,
+    )
+}
+
+pub async fn audit_local(
+    verifying_key: Option<&str>,
+    long: bool,
+    verify: bool,
+    proof_path: Option<PathBuf>,
+    input: Option<PathBuf>,
+) -> Result<String> {
+    let src = file_or_stdin(input)?;
+    let signature: SignatureResponse = serde_json::from_reader(src)?;
+
+    // no verification requested, we can stop here
+    if !verify {
+        return format_audit_response(
+            long,
+            &signature,
+            &VerificationStatus::Disabled,
+            &VerificationStatus::Disabled,
+        );
+    }
+
+    // verify the signature against the log signature
+    let verifying_key = match verifying_key {
+        Some(key) => key,
+        None => {
+            return format_audit_response(
+                long,
+                &signature,
+                &VerificationStatus::Failed("auditor does not have key with key_id".to_string()),
+                &VerificationStatus::Disabled,
+            );
+        }
+    };
+
+    let Ok(verifying_key) = hex::decode(verifying_key) else {
+        return format_audit_response(
+            long,
+            &signature,
+            &VerificationStatus::Failed("auditor key is not valid hex".to_string()),
+            &VerificationStatus::Disabled,
+        );
+    };
+
+    if signature.verify(&verifying_key).is_err() {
+        return format_audit_response(
+            long,
+            &signature,
+            &VerificationStatus::Failed(
+                "signature does not verify for the auditor key".to_string(),
+            ),
+            &VerificationStatus::Disabled,
+        );
+    }
+
+    let Some(proof_path) = proof_path else {
+        return format_audit_response(
+            long,
+            &signature,
+            &VerificationStatus::Success,
+            &VerificationStatus::Disabled,
+        );
+    };
+
+    let mut src = fs::File::open(proof_path).context("cannot read input file")?;
+
+    let mut raw_proof = vec![];
+    if let Err(e) = src.read_to_end(&mut raw_proof) {
+        return format_audit_response(
+            long,
+            &signature,
+            &VerificationStatus::Success,
+            &VerificationStatus::Failed(e.to_string()),
+        );
+    };
+    let raw_proof = raw_proof;
+    let blob = AuditBlobName {
+        epoch: signature.epoch().into(),
+        previous_hash: auditor::compute_start_root_hash(&raw_proof).await?,
+        current_hash: signature.digest().as_slice().try_into()?,
+    };
+
+    if log_enabled!(log::Level::Error) {
+        eprintln!("Audit proof verification enabled. It can take a few seconds");
+    }
+    let dots_handle = print_dots();
+
+    let verification = auditor::verify_raw_proof(&blob, &raw_proof).await;
+
+    if log_enabled!(log::Level::Error) {
+        eprintln!();
+    }
+    dots_handle.abort();
+
+    if let Err(e) = verification {
+        return format_audit_response(
+            long,
+            &signature,
+            &VerificationStatus::Success,
+            &VerificationStatus::Failed(e.to_string()),
+        );
+    }
+    format_audit_response(
+        long,
+        &signature,
+        &VerificationStatus::Success,
+        &VerificationStatus::Success,
+    )
 }

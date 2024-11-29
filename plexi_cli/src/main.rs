@@ -2,6 +2,7 @@ use std::process;
 
 mod cli;
 mod cmd;
+mod print;
 
 #[tokio::main]
 pub async fn main() -> anyhow::Result<()> {
@@ -32,6 +33,22 @@ pub async fn main() -> anyhow::Result<()> {
                 !no_verify,
                 verifying_key.as_deref(),
                 epoch.as_ref(),
+            )
+            .await
+        }
+        cli::Commands::LocalAudit {
+            verifying_key,
+            long,
+            no_verify,
+            proof_path,
+            signature_path_or_stdin,
+        } => {
+            cmd::audit_local(
+                verifying_key.as_deref(),
+                long,
+                !no_verify,
+                proof_path,
+                signature_path_or_stdin,
             )
             .await
         }
