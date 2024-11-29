@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use bincode::{BorrowDecode, Decode, Encode};
 use ed25519_dalek::SIGNATURE_LENGTH;
 use prost::Message;
-use serde::{de, Deserializer};
+use serde::{de, Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 #[cfg(feature = "openapi")]
@@ -134,6 +134,10 @@ pub const FIRST_EPOCH: Epoch = Epoch(1);
 impl Epoch {
     pub fn is_first(&self) -> bool {
         self.0 == FIRST_EPOCH.0
+    }
+
+    pub fn as_root_epoch(&self, digest: &str) -> String {
+        format!("{}/{}", self.0, digest)
     }
 }
 
@@ -385,7 +389,7 @@ impl fmt::Debug for SignatureRequest {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignatureResponse {
     version: Ciphersuite,
@@ -393,12 +397,10 @@ pub struct SignatureResponse {
     namespace: String,
     timestamp: u64,
     epoch: Epoch,
-    #[serde(with = "hex::serde")]
     digest: Vec<u8>,
-    #[serde(with = "hex::serde")]
     signature: Vec<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     key_id: Option<u8>,
+    serialized_message: Option<Vec<u8>>,
 }
 
 impl fmt::Debug for SignatureResponse {
@@ -412,6 +414,7 @@ impl fmt::Debug for SignatureResponse {
             .field("digest", &hex::encode(&self.digest))
             .field("signature", &hex::encode(&self.signature))
             .field("key_id", &self.key_id)
+            .field("serialized_message", &self.serialized_message)
             .finish()
     }
 }
@@ -427,6 +430,7 @@ impl SignatureResponse {
         digest: Vec<u8>,
         signature: Vec<u8>,
         key_id: Option<u8>,
+        serialized_message: Option<Vec<u8>>,
     ) -> Self {
         Self {
             version: *version,
@@ -437,6 +441,7 @@ impl SignatureResponse {
             digest,
             signature,
             key_id,
+            serialized_message,
         }
     }
 
@@ -473,8 +478,12 @@ impl SignatureResponse {
         self.key_id
     }
 
+    pub fn serialized_message(&self) -> Option<Vec<u8>> {
+        self.serialized_message.clone()
+    }
+
     pub fn verify(&self, verifying_key: &[u8]) -> anyhow::Result<()> {
-        // at the time of writting, all version use ed25519 keys. this simplify parsing of the verifying key
+        // at the time of writing, all versions use ed25519 keys. This simplifies parsing of the verifying key.
         match self.version {
             #[cfg(feature = "bincode")]
             Ciphersuite::BincodeEd25519 => (),
@@ -527,6 +536,12 @@ impl From<Report> for HashMap<String, String> {
         if let Some(key_id) = val.key_id {
             map.insert("key_id".to_string(), key_id.to_string());
         }
+        if let Some(serialized_message) = val.serialized_message {
+            map.insert(
+                "serialized_message".to_string(),
+                hex::encode(serialized_message),
+            );
+        }
         map
     }
 }
@@ -576,7 +591,49 @@ impl TryFrom<HashMap<String, String>> for Report {
                 .map(|id| id.parse())
                 .transpose()
                 .map_err(|_| PlexiError::BadParameter("key_id".to_string()))?,
+            serialized_message: value
+                .get("serialized_message")
+                .map(|msg| hex::decode(msg))
+                .transpose()
+                .map_err(|_| PlexiError::BadParameter("serialized_message".to_string()))?,
         })
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct TempSignatureResponse {
+    version: Option<Ciphersuite>,
+    ciphersuite: Option<Ciphersuite>,
+    namespace: String,
+    timestamp: u64,
+    epoch: Epoch,
+    #[serde(with = "hex::serde")]
+    digest: Vec<u8>,
+    #[serde(with = "hex::serde")]
+    signature: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key_id: Option<u8>,
+    serialized_message: Option<String>,
+}
+
+impl Serialize for SignatureResponse {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let sm = self.serialized_message.as_ref().map(|m| hex::encode(m));
+        let tsp = TempSignatureResponse {
+            ciphersuite: Some(self.ciphersuite),
+            version: Some(self.ciphersuite),
+            namespace: self.namespace.clone(),
+            timestamp: self.timestamp,
+            epoch: self.epoch,
+            digest: self.digest.clone(),
+            signature: self.signature.clone(),
+            key_id: self.key_id,
+            serialized_message: sm,
+        };
+        tsp.serialize(serializer)
     }
 }
 
@@ -594,23 +651,7 @@ fn deserialize_signature_response<'de, D>(deserializer: D) -> Result<SignatureRe
 where
     D: Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    struct TempSignatureResponse {
-        version: Option<Ciphersuite>,
-        ciphersuite: Option<Ciphersuite>,
-        namespace: String,
-        timestamp: u64,
-        epoch: Epoch,
-        #[serde(with = "hex::serde")]
-        digest: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        signature: Vec<u8>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        key_id: Option<u8>,
-    }
-
     let temp = TempSignatureResponse::deserialize(deserializer)?;
-
     let suite_value = match (temp.version, temp.ciphersuite) {
         (Some(v), _) => v,
         (_, Some(c)) => c,
@@ -620,7 +661,11 @@ where
             ))
         }
     };
-
+    let sm = temp
+        .serialized_message
+        .map(|m| hex::decode(m))
+        .transpose()
+        .map_err(|_| de::Error::custom("serialized_message should be hex encoded"))?;
     Ok(SignatureResponse {
         version: suite_value,
         ciphersuite: suite_value,
@@ -630,6 +675,7 @@ where
         digest: temp.digest,
         signature: temp.signature,
         key_id: temp.key_id,
+        serialized_message: sm,
     })
 }
 
@@ -768,5 +814,26 @@ mod tests {
                 .verify_strict(&message.to_vec().unwrap(), &signature)
                 .is_ok());
         }
+    }
+
+    #[test]
+    fn test_signature_response_serialization() {
+        let test_response = SignatureResponse {
+            version: Ciphersuite::ProtobufEd25519,
+            ciphersuite: Ciphersuite::ProtobufEd25519,
+            namespace: "n".to_string(),
+            timestamp: 2,
+            epoch: Epoch(3),
+            digest: vec![4],
+            signature: vec![5],
+            key_id: Some(6),
+            serialized_message: Some(vec![7]),
+        };
+        let test_json = r#"{"version":1,"ciphersuite":1,"namespace":"n","timestamp":2,"epoch":3,"digest":"04","signature":"05","key_id":6,"serialized_message":"07"}"#;
+        let serialized = serde_json::to_string(&test_response).unwrap();
+        assert_eq!(serialized, test_json.to_string());
+        let deserialized: Result<SignatureResponse, _> = serde_json::from_str(test_json);
+        assert!(deserialized.is_ok());
+        assert_eq!(deserialized.unwrap(), test_response);
     }
 }
