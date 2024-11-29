@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 use plexi_core::Epoch;
 
@@ -47,6 +49,25 @@ pub enum Commands {
         /// Enable detailed output
         #[arg(short, long, default_value_t = false, group = "format")]
         long: bool,
+    },
+    #[command(verbatim_doc_comment)]
+    LocalAudit {
+        /// Ed25519 public key in hex format.
+        #[arg(long, env = "PLEXI_VERIFYING_KEY")]
+        verifying_key: Option<String>,
+        /// Enable detailed output
+        #[arg(short, long, default_value_t = false, group = "format")]
+        long: bool,
+        /// Disable signature and proof validation
+        #[arg(long, default_value_t = false, env = "PLEXI_VERIFICATION_DISABLED")]
+        no_verify: bool,
+        /// Path to a file containing an epoch consistency proof
+        /// Format is still ad-hoc, based on AKD
+        #[arg(long, env = "PLEXI_PROOF_PATH")]
+        proof_path: Option<PathBuf>,
+        /// Path to a file containing an epoch to verify
+        /// Format is { ciphersuite, namespace, timestamp, epoch, digest, signature }
+        signature_path_or_stdin: Option<PathBuf>,
     },
 }
 
