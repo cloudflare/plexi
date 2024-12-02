@@ -593,7 +593,7 @@ impl TryFrom<HashMap<String, String>> for Report {
                 .map_err(|_| PlexiError::BadParameter("key_id".to_string()))?,
             serialized_message: value
                 .get("serialized_message")
-                .map(|msg| hex::decode(msg))
+                .map(hex::decode)
                 .transpose()
                 .map_err(|_| PlexiError::BadParameter("serialized_message".to_string()))?,
         })
@@ -621,7 +621,7 @@ impl Serialize for SignatureResponse {
     where
         S: Serializer,
     {
-        let sm = self.serialized_message.as_ref().map(|m| hex::encode(m));
+        let sm = self.serialized_message.as_ref().map(hex::encode);
         let tsp = TempSignatureResponse {
             ciphersuite: Some(self.ciphersuite),
             version: Some(self.ciphersuite),
@@ -663,7 +663,7 @@ where
     };
     let sm = temp
         .serialized_message
-        .map(|m| hex::decode(m))
+        .map(hex::decode)
         .transpose()
         .map_err(|_| de::Error::custom("serialized_message should be hex encoded"))?;
     Ok(SignatureResponse {
