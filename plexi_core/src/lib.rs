@@ -485,8 +485,11 @@ impl SignatureResponse {
     pub fn verify(&self, verifying_key: &[u8]) -> anyhow::Result<()> {
         // at the time of writing, all versions use ed25519 keys. This simplifies parsing of the verifying key.
         match self.version {
-            #[cfg(feature = "bincode")]
-            Ciphersuite::BincodeEd25519 => (),
+            Ciphersuite::BincodeEd25519 => {
+                if !cfg!(feature = "bincode") {
+                    return Err(anyhow!("Verification is not supported for bincode."));
+                }
+            }
             Ciphersuite::ProtobufEd25519 => (),
             Ciphersuite::Unknown(_) => {
                 return Err(anyhow!(
