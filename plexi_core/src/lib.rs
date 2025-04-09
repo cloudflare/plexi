@@ -105,8 +105,8 @@ impl Encode for Ciphersuite {
 }
 
 #[cfg(feature = "bincode")]
-impl Decode for Ciphersuite {
-    fn decode<D: bincode::de::Decoder>(
+impl<Context> Decode<Context> for Ciphersuite {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let value: u32 = bincode::Decode::decode(decoder)?;
@@ -115,8 +115,8 @@ impl Decode for Ciphersuite {
 }
 
 #[cfg(feature = "bincode")]
-impl<'de> BorrowDecode<'de> for Ciphersuite {
-    fn borrow_decode<B: bincode::de::BorrowDecoder<'de>>(
+impl<'de, Context> BorrowDecode<'de, Context> for Ciphersuite {
+    fn borrow_decode<B: bincode::de::BorrowDecoder<'de, Context = Context>>(
         buffer: &mut B,
     ) -> Result<Self, bincode::error::DecodeError> {
         let value = u32::borrow_decode(buffer)?;
