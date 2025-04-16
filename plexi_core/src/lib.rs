@@ -89,7 +89,7 @@ impl fmt::Display for Ciphersuite {
             Self::BincodeEd25519 => "0x0002",
             Self::Unknown(_u) => "unknown",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

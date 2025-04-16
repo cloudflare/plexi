@@ -57,7 +57,7 @@ pub async fn main() -> anyhow::Result<()> {
     match output {
         Ok(result) => {
             if !result.is_empty() {
-                println!("{result}")
+                println!("{result}");
             }
         }
         Err(err) => {

@@ -113,9 +113,9 @@ impl fmt::Display for VerificationStatus {
         let s = match self {
             VerificationStatus::Success => "success".to_string(),
             VerificationStatus::Disabled => "-".to_string(),
-            VerificationStatus::Failed(err) => format!("failed - {}", err),
+            VerificationStatus::Failed(err) => format!("failed - {err}"),
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -138,7 +138,7 @@ fn format_audit_response(
         time::OffsetDateTime::from_unix_timestamp((signature.timestamp() / 1000) as i64)?
             .format(&format)?;
 
-    return Ok([
+    Ok([
         "Namespace",
         format!(
             "  {: <22}: {namespace}",
@@ -152,7 +152,7 @@ fn format_audit_response(
             version = format_ciphersuite(signature.version())
         )
         .as_str(),
-        format!("\nSignature ({timestamp})", timestamp = formatted_timestamp).as_str(),
+        format!("\nSignature ({formatted_timestamp})").as_str(),
         format!(
             "  {: <22}: {epoch}",
             "Epoch height".bold(),
@@ -184,7 +184,7 @@ fn format_audit_response(
         )
         .as_str(),
     ]
-    .join("\n"));
+    .join("\n"))
 }
 
 pub async fn audit(
@@ -196,16 +196,15 @@ pub async fn audit(
     epoch: Option<&Epoch>,
 ) -> Result<String> {
     let client = PlexiClient::new(Url::parse(remote_url)?, None, Some(APP_USER_AGENT))?;
-    let epoch = match epoch {
-        Some(epoch) => epoch,
-        None => {
-            let Some(last_verified_epoch) = client.last_verified_epoch(namespace).await? else {
-                return Err(anyhow!(
-                    "namespace {namespace} does not have a latest epoch. Please specify one"
-                ));
-            };
-            &last_verified_epoch.epoch()
-        }
+    let epoch = if let Some(epoch) = epoch {
+        epoch
+    } else {
+        let Some(last_verified_epoch) = client.last_verified_epoch(namespace).await? else {
+            return Err(anyhow!(
+                "namespace {namespace} does not have a latest epoch. Please specify one"
+            ));
+        };
+        &last_verified_epoch.epoch()
     };
     let Some(signature) = client.signature(namespace, epoch).await? else {
         return Err(anyhow!(
@@ -225,36 +224,33 @@ pub async fn audit(
 
     // verify the signature against the log signature
     let config = client.auditor_config().await?;
-    let verifying_key = match verifying_key {
-        Some(key) => key,
-        None => {
-            let Some(key_id) = signature.key_id() else {
-                return format_audit_response(
-                    long,
-                    &signature,
-                    &VerificationStatus::Failed(
-                        "don't want to implement random key validation".to_string(),
-                    ),
-                    &VerificationStatus::Disabled,
-                );
-            };
-            let Some(key) = config
-                .keys()
-                .iter()
-                .find(|key_info| key_info.key_id() == key_id)
-            else {
-                return format_audit_response(
-                    long,
-                    &signature,
-                    &VerificationStatus::Failed(
-                        "auditor does not have key with key_id".to_string(),
-                    ),
-                    &VerificationStatus::Disabled,
-                );
-            };
+    let verifying_key = if let Some(key) = verifying_key {
+        key
+    } else {
+        let Some(key_id) = signature.key_id() else {
+            return format_audit_response(
+                long,
+                &signature,
+                &VerificationStatus::Failed(
+                    "don't want to implement random key validation".to_string(),
+                ),
+                &VerificationStatus::Disabled,
+            );
+        };
+        let Some(key) = config
+            .keys()
+            .iter()
+            .find(|key_info| key_info.key_id() == key_id)
+        else {
+            return format_audit_response(
+                long,
+                &signature,
+                &VerificationStatus::Failed("auditor does not have key with key_id".to_string()),
+                &VerificationStatus::Disabled,
+            );
+        };
 
-            key.public_key().as_str()
-        }
+        key.public_key().as_str()
     };
 
     let Ok(verifying_key) = hex::decode(verifying_key) else {
@@ -315,7 +311,7 @@ pub async fn audit(
 
     // First check if the epoch is the root or before root
     let (root_epoch, root_digest) = {
-        let root_parts: Vec<&str> = root.split("/").collect();
+        let root_parts: Vec<&str> = root.split('/').collect();
         if root_parts.len() != 2 {
             return format_audit_response(
                 long,

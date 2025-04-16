@@ -256,6 +256,6 @@ impl fmt::Display for NamespaceStatus {
             Self::Initialization => "Initialization",
             Self::Online => "Online",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
